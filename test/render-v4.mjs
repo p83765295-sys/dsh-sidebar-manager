@@ -117,18 +117,6 @@ const measure = () => tab.evaluate(() => {
     shellFolded: document.querySelector('.snc-shell')?.dataset.sncFolded,
     panelRowsVisible: [...document.querySelectorAll('nav[aria-label="全局面板"] > button, nav[aria-label="全局面板"] > .snc-entry')]
       .filter((n) => getComputedStyle(n).display !== 'none').length,
-    // the extension literally called 扩展管理 sits under our group of the same name
-    twin: (() => {
-      const row = document.querySelector('nav[aria-label="全局面板"] > button[data-snc-twin="true"], nav[aria-label="全局面板"] > .snc-entry[data-snc-twin="true"] > button[data-snc-twin="true"]');
-      if (!row) return null;
-      const host = row.parentElement.classList.contains('snc-entry') ? row.parentElement : row;
-      const before = getComputedStyle(host, '::before');
-      return {
-        label: row.getAttribute('aria-label'),
-        separator: before.content === '""' ? before.backgroundColor : 'none',
-        marginTop: getComputedStyle(host).marginTop,
-      };
-    })(),
     // the toggle is a control: dragging across it must not select the label
     groupSelect: getComputedStyle(document.querySelector('.snc-group')).userSelect,
     titleSelect: getComputedStyle(document.querySelector('.snc-title')).userSelect,

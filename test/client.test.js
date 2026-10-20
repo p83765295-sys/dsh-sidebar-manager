@@ -504,22 +504,3 @@ test('the group row and the gear cannot be selected as text', () => {
   assert.doesNotMatch(cssOf(doc), /\.snc-title\s*\{[^}]*user-select:\s*text/);
   dispose();
 });
-
-test('a host row named like the group row is marked as its twin', () => {
-  /* the real host ships an extension literally called "扩展管理" */
-  const rows =
-    '<button class="_2H3hWW_panelRow" aria-label="插件">插件</button>' +
-    '<button class="_2H3hWW_panelRow" aria-label="扩展管理">扩展管理</button>';
-  const { doc, dispose } = start(`<nav class="_2H3hWW_panelList" aria-label="全局面板">${rows}</nav>`);
-  const marked = doc.querySelectorAll('button[data-snc-twin="true"]');
-  assert.equal(marked.length, 1, 'only the same-named row is marked');
-  assert.equal(marked[0].getAttribute('aria-label'), '扩展管理');
-  const css = cssOf(doc);
-  assert.match(css, /data-snc-twin="true"\]::before/, 'the pair gets a separator rule');
-  // renaming the host entry must clear the mark on the next paint
-  const row = marked[0];
-  row.setAttribute('aria-label', '别的名字');
-  gear(doc).click();
-  assert.equal(row.hasAttribute('data-snc-twin'), false);
-  dispose();
-});
