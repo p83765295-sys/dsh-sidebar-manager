@@ -727,33 +727,36 @@ test('a drag does not select the panel it was started on', () => {
   dispose();
 });
 
-test('the gear toggles the session: pressing it again saves the dragged order', () => {
+test('a drag is saved the moment it lands, without leaving edit mode', () => {
   const { doc, dom, dispose } = start(both());
   gear(doc).click();
   const unitsA = stubUnits(dom.window, [...doc.querySelectorAll("nav > .snc-entry")]);
   stubHit(dom.window, unitsA);
   pointer(dom.window, 'pointerdown', dragHandles(doc)[0], 10, 14);
-  /* rows are 40px tall at y = index*40; row 1 spans 40..76 with its midpoint at
-     58, so y=70 is its trailing half → "插件" lands just after "自动化任务" */
+  /* rows are 40px tall at y = index*40. One move only ever shifts the row by
+     one slot, because the slot is re-read from the pointer position after the
+     DOM has already been reordered -- same as a real continuous drag. */
   pointer(dom.window, 'pointermove', dom.window.document.body, 10, 70);
   pointer(dom.window, 'pointerup', dom.window.document.body, 10, 70);
-  /* nothing is written until the session is closed */
-  assert.deepEqual(stateOf(dom.window).order, [], 'a drag alone never touches the store');
-  assert.deepEqual(orderOf(doc), ['自动化任务', '插件', '上下文洞察', '扩展管理', '任务看板', '记忆系统']);
+  const moved = ['自动化任务', '插件', '上下文洞察', '扩展管理', '任务看板', '记忆系统'];
+  assert.deepEqual(orderOf(doc), moved);
+  /* live writes: the store already holds the new order while still editing */
+  assert.deepEqual(stateOf(dom.window).order, moved, 'the drop itself saved the order');
+  assert.equal(shadow(doc).dataset.sncEditing, 'true', 'saving must not close the editor');
 
-  gear(doc).click();
   const record = stateOf(dom.window);
-  assert.deepEqual(record.order, ['自动化任务', '插件', '上下文洞察', '扩展管理', '任务看板', '记忆系统']);
+  gear(doc).click();
   assert.equal(shadow(doc).dataset.sncEditing, 'false', 'the same button leaves edit mode');
+  assert.deepEqual(stateOf(dom.window).order, moved, 'leaving changes nothing');
   dispose();
 
   /* a fresh boot on the SAME storage must come back in the saved order */
   const again = start(both(), record);
-  assert.deepEqual(orderOf(again.doc), ['自动化任务', '插件', '上下文洞察', '扩展管理', '任务看板', '记忆系统']);
+  assert.deepEqual(orderOf(again.doc), moved);
   again.dispose();
 });
 
-test('Escape throws the draft away and keeps the saved order', () => {
+test('Escape leaves edit mode but cannot undo, because every change is already saved', () => {
   const saved = { v: 2, folded: false, hidden: [], views: [], order: ['记忆系统', '插件', '自动化任务', '上下文洞察', '扩展管理', '任务看板'], orderViews: [] };
   const { doc, dom, dispose } = start(both(), saved);
   /* the saved order is already in effect outside edit mode */
@@ -767,12 +770,15 @@ test('Escape throws the draft away and keeps the saved order', () => {
      its trailing half and the drop appends at the end */
   pointer(dom.window, 'pointermove', dom.window.document.body, 10, 230);
   pointer(dom.window, 'pointerup', dom.window.document.body, 10, 230);
-  assert.deepEqual(orderOf(doc), ['插件', '自动化任务', '上下文洞察', '扩展管理', '任务看板', '记忆系统'], 'the drag did move things');
+  const moved = ['插件', '自动化任务', '上下文洞察', '扩展管理', '任务看板', '记忆系统'];
+  assert.deepEqual(orderOf(doc), moved, 'the drag did move things');
+  assert.deepEqual(stateOf(dom.window).order, moved, 'and it was written on drop');
 
   dom.window.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
-  assert.deepEqual(stateOf(dom.window).order, saved.order, 'the store is untouched');
-  assert.deepEqual(orderOf(doc), saved.order, 'the DOM reverts to the saved order');
-  assert.equal(shadow(doc).dataset.sncEditing, 'false', 'Escape also leaves edit mode');
+  /* there is no draft to discard any more: Escape only stops editing */
+  assert.deepEqual(stateOf(dom.window).order, moved, 'Escape is not an undo');
+  assert.deepEqual(orderOf(doc), moved, 'the DOM keeps the order the user built');
+  assert.equal(shadow(doc).dataset.sncEditing, 'false', 'Escape still leaves edit mode');
   dispose();
 });
 
@@ -842,15 +848,53 @@ test('replaying the saved order never mutates an already-ordered list', () => {
   });
 });
 
-test('the gear shows a pending-change dot and apply clears it', () => {
-  const { doc, dispose } = start(both());
+test('editing has no pending state, so the gear never carries a dot', () => {
+  const { doc, dom, dispose } = start(both());
+  const css = cssOf(doc);
+  /* The dot used to mean "you have unsaved layout changes". Now that a drag and
+     a checkbox both write through, there is no such moment, so the rule and the
+     attribute are gone together -- a leftover dot would promise a save step that
+     does not exist. */
+  assert.doesNotMatch(css, /snc-dirty/);
   gear(doc).click();
-  assert.equal(gear(doc).dataset.sncDirty, 'false');
-  /* a checkbox toggle alone is written through, not a pending layout change */
+  assert.equal(gear(doc).hasAttribute('data-snc-dirty'), false, 'no dirty attribute is published');
+
+  /* and it stays absent through both kinds of change */
   const box = doc.querySelector('[data-snc-check]');
   box.checked = false;
-  box.dispatchEvent(new doc.defaultView.Event('change', { bubbles: true }));
-  assert.equal(gear(doc).dataset.sncDirty, 'false', 'hiding is immediate, not a draft');
+  box.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+  assert.equal(gear(doc).hasAttribute('data-snc-dirty'), false);
+
+  const units = stubUnits(dom.window, [...doc.querySelectorAll("nav > .snc-entry")]);
+  stubHit(dom.window, units);
+  pointer(dom.window, 'pointerdown', dragHandles(doc)[0], 10, 14);
+  pointer(dom.window, 'pointermove', dom.window.document.body, 10, 70);
+  assert.equal(gear(doc).hasAttribute('data-snc-dirty'), false, 'a drag does not raise one either');
+  pointer(dom.window, 'pointerup', dom.window.document.body, 10, 70);
+  dispose();
+});
+
+test('a checkbox toggle is saved immediately, just like a drag', () => {
+  const { doc, dom, dispose } = start(both());
+  gear(doc).click();
+  const box = doc.querySelector('[data-snc-check]');
+  box.checked = false;
+  box.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+  /* the two kinds of change must behave identically: both are already on disk
+     while the editor is still open */
+  assert.deepEqual(stateOf(dom.window).hidden, ['插件'], 'hiding reached the store at once');
+  const record = stateOf(dom.window);
+
+  const again = start(both(), record);
+  try {
+    /* wrappers only exist while editing, so address the host button directly --
+       the flag lives there, not on our wrapper */
+    const restored = again.doc.querySelector('nav button[class*="panelRow"]');
+    assert.ok(restored, 'the row is still in the DOM after a reboot');
+    assert.equal(restored.dataset.sncHidden, 'true', 'the hidden row comes back hidden');
+  } finally {
+    again.dispose();
+  }
   dispose();
 });
 

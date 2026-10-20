@@ -76,9 +76,6 @@ body{margin:0;padding:18px;background:#eceef1;font-family:-apple-system,"Segoe U
 .act.is-on{opacity:1;color:var(--brand)}
 .hdr.is-hover .chev,.hdr:hover .chev{color:var(--ink2)}
 .hdr.is-folded .chev{transform:rotate(-90deg)}
-/* the dirty dot: unsaved display changes */
-.act.is-on::after{content:"";position:absolute;width:4px;height:4px;border-radius:50%;background:var(--brand);
-  transform:translate(6px,-6px)}
 
 /* ---- extension rows ---- */
 .plist{display:flex;flex-direction:column;gap:2px}
