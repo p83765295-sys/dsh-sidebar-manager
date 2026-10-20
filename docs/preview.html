@@ -214,6 +214,15 @@
     from { opacity: .85; scale: .5; }
     to   { opacity: 0;   scale: 1.9; }
   }
+
+  /* ---------------- compact mode (no narration) ----------------
+     Same page, same plugin run, same timeline -- only the caption column is
+     gone and the window narrows to match. Chosen by ?mode=compact so both cuts
+     are produced from one source of truth instead of two drifting copies:
+     two screenshots of the same code can always be trusted, two scripts that
+     each script the interactions cannot. */
+  .main[data-x-narration="off"] .body { display: none; }
+
 </style>
 
 <div class="app">
@@ -243,7 +252,7 @@
     <div class="foot"><span class="avatar"></span>示例用户</div>
   </aside>
 
-  <div class="main">
+  <div class="main" data-x-narration="on">
     <div class="head">
       <div class="title">示例会话</div>
       <div class="tools"><span class="chip">智能体团队</span><span class="chip">标准模式</span></div>
@@ -303,6 +312,13 @@ const context = {
 </script>
 <script src="../lib/client.js"></script>
 <script>
+/* ---- two cuts of one page ----
+   ?mode=compact drops the caption column and narrows the window; everything
+   else -- the plugin, the timeline, the assertions -- is shared. */
+const MODE = new URL(location.href).searchParams.get('mode') || 'full';
+const NARRATION_ON = MODE !== 'compact';
+document.querySelector('.main').dataset.xNarration = NARRATION_ON ? 'on' : 'off';
+
 /* boot: run the plugin the same way the host would */
 window.__modules['dsh-sidebar-manager'].apply(context);
 
@@ -545,9 +561,11 @@ window.demoFrame = (t) => {
   for (const step of timeline) {
     if (step.run && t >= step.at && !step.done) { step.done = true; step.run(); }
   }
-  const narration = narrationAt(t);
-  document.getElementById('headline').textContent = narration.title;
-  document.getElementById('details').textContent = narration.text;
+  if (NARRATION_ON) {
+    const narration = narrationAt(t);
+    document.getElementById('headline').textContent = narration.title;
+    document.getElementById('details').textContent = narration.text;
+  }
   return {
     collapsed: shell()?.dataset.sncFolded ?? 'null',
     editing: shell()?.dataset.sncEditing ?? 'null',

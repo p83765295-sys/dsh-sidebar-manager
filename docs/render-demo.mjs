@@ -25,11 +25,23 @@ const repo = join(here, '..');
 const EDGE = process.env.SNC_EDGE ||
   'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
 
-const WIDTH = 1024;
-const HEIGHT = 640;
 const FPS = 30;
 const DURATION = 11;
 const FRAMES = FPS * DURATION;
+
+/* ---- two cuts, one timeline ----
+   ?mode=compact renders the same page with the caption column removed, so both
+   GIFs share twenty-two seconds of identical interaction. What differs is only
+   the frame: one is narrated, one is silent. If the demo is ever re-shot, both
+   cuts move together and neither can quietly drift away from the real plugin.
+     node docs/render-demo.mjs               -> demo.gif (narrated)
+     node docs/render-demo.mjs compact       -> demo-compact.gif (silent) */
+const MODE = process.argv[2] === 'compact' ? 'compact' : 'full';
+const NARRATED = MODE !== 'compact';
+const WIDTH = NARRATED ? 1024 : 372;   /* sidebar + a readable slice of the pane */
+const HEIGHT = 640;
+const PAGE_URL = `${pathToFileURL(join(here, 'preview.html')).href}?mode=${MODE}`;
+const GIF_NAME = NARRATED ? 'demo.gif' : 'demo-compact.gif';
 
 /* the frame -> expectation table. Each entry is a checkpoint the recording has
    to satisfy; a broken plugin fails here rather than producing a plausible but
@@ -57,7 +69,7 @@ if (!process.env.SNC_KEEP) {
 const temp = await mkdtemp(join(tmpdir(), 'dsh-sidebar-manager-demo-'));
 const framesDir = join(temp, 'frames');
 await mkdir(framesDir, { recursive: true });
-const url = pathToFileURL(join(here, 'preview.html')).href;
+const url = PAGE_URL;
 
 log('launching Edge…');
 const edge = spawn(EDGE, [
@@ -148,8 +160,11 @@ try {
     if (frame % 60 === 0) log(`  captured ${frame}/${FRAMES}`);
   }
 
-  /* ---- stills for README: folded / expanded+hidden / editing ---- */
+  /* ---- stills for README: folded / expanded+hidden / editing ----
+     only the narrated cut writes them; the compact cut is the same picture
+     without captions, so it would just overwrite them with a worse version */
   const shots = join(repo, 'docs', 'screenshots');
+  if (NARRATED) {
   await mkdir(shots, { recursive: true });
   const stillAt = async (frame, name) => {
     const file = join(framesDir, `${String(frame).padStart(4, '0')}.png`);
@@ -157,15 +172,16 @@ try {
     await writeFile(join(shots, name), await readFile(file));
     log(`  still ${name} ← frame ${frame}`);
   };
-  await stillAt(20, '01-folded.png');
-  await stillAt(240, '02-expanded.png');
-  await stillAt(130, '03-editing.png');
+    await stillAt(20, '01-folded.png');
+    await stillAt(240, '02-expanded.png');
+    await stillAt(130, '03-editing.png');
+  }
 
   /* ---- encode: mp4 master, then a small gif for the README ---- */
   const images = join(repo, 'docs', 'images');
   await mkdir(images, { recursive: true });
   const mp4 = join(temp, 'demo.mp4');
-  const gif = join(images, 'demo.gif');
+  const gif = join(images, GIF_NAME);
 
   log('encoding mp4…');
   execFileSync('ffmpeg', [
@@ -182,7 +198,12 @@ try {
   execFileSync('ffmpeg', [
     '-v', 'error', '-y',
     '-i', mp4,
-    '-vf', 'fps=12,scale=720:-1:flags=lanczos,split[a][b];[a]palettegen=stats_mode=diff[p];[b][p]paletteuse=dither=sierra2_4a',
+    /* the compact cut is a narrow column: keep it at its native width instead of
+       upscaling to 720, and step down to 10fps -- gestures stay readable and the
+       file lands well under the 500 KB budget */
+    '-vf', NARRATED
+      ? 'fps=12,scale=720:-1:flags=lanczos,split[a][b];[a]palettegen=stats_mode=diff[p];[b][p]paletteuse=dither=sierra2_4a'
+      : 'fps=10,split[a][b];[a]palettegen=stats_mode=diff[p];[b][p]paletteuse=dither=sierra2_4a',
     '-loop', '0',
     gif,
   ]);
