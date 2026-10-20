@@ -183,20 +183,38 @@ test('the fold state survives a reload, both ways round', () => {
   third.dispose();
 });
 
-test('the expanded header is joined to its list by a hairline, not a fill', () => {
+test('the expanded header carries no fill and no rule at all', () => {
   const { doc, dispose } = start(both());
   const css = cssOf(doc);
-  /* the old bug: a permanently tinted band that read as "selected" */
-  assert.equal(/\.snc-group\[aria-expanded="true"\]\s*\{\s*background:/.test(css), false,
-    'no rule may fill the row just because it is expanded');
-  /* the new sign: a 1px background-image on the bottom edge, only while open */
-  const open = css.slice(css.indexOf('.snc-shell[data-snc-folded="false"]'), css.indexOf('}', css.indexOf('.snc-shell[data-snc-folded="false"]')));
-  assert.match(open, /background-image:\s*linear-gradient/);
-  assert.match(open, /background-size:\s*calc\(100% - 16px\)\s*1px/);
-  assert.match(open, /background-position:\s*8px 100%/);
-  /* hover must composite over it, not replace it */
-  const hover = css.slice(css.indexOf('.snc-shell[data-snc-folded="false"] > .snc-group:hover'));
-  assert.match(hover, /background-color:/, 'hover sets colour only, so the hairline survives');
+  /* two bad versions are on record: a permanent tint (read as "selected") and
+     a 1px bottom hairline (still noise). Neither may come back: NO rule may
+     style .snc-group for its expanded or folded state. The row is structure
+     and only the pointer lights it up. */
+  assert.equal(/\.snc-group\[aria-expanded="[a-z]+"\]\s*\{/.test(css), false,
+    'no rule may style the row by its expanded state');
+  assert.equal(/\.snc-shell\[data-snc-folded="[a-z]+"\]\s*>\s*\.snc-group\s*\{/.test(css), false,
+    'no rule may style the row by its fold state');
+  assert.equal(/\.snc-group\s*\{[^}]*background-image/.test(css), false,
+    'the row draws no rule of its own');
+  /* hover is the only state that paints it */
+  assert.match(css, /\.snc-group:hover\s*\{\s*background:/);
+  dispose();
+});
+
+test('the caption uses the host type scale, not a hand-picked size', () => {
+  const { doc, dispose } = start(both());
+  const css = cssOf(doc);
+  const cap = css.slice(css.indexOf('.snc-caption {'), css.indexOf('}', css.indexOf('.snc-caption {')));
+  /* the native sidebar runs 500 / 14px / 22px for its rows; taking the tokens
+     rather than literals means a theme change moves this row with it */
+  assert.match(cap, /font-size:\s*var\(--dsw-font-s-strong-14-font-size,\s*14px\)/);
+  assert.match(cap, /font-weight:\s*var\(--dsw-font-s-strong-14-font-weight,\s*500\)/);
+  assert.match(cap, /line-height:\s*var\(--dsw-font-s-strong-14-line-height,\s*22px\)/);
+  /* one step quieter than the entries below, which is what makes it a header */
+  assert.match(cap, /color:\s*var\(--dsw-alias-label-secondary/);
+  /* the old 11px upper-case register is gone for good */
+  assert.equal(/text-transform:\s*uppercase/.test(cap), false, 'no upper-casing');
+  assert.equal(/font-size:\s*11px/.test(cap), false, 'no 11px caption');
   dispose();
 });
 
