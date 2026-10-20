@@ -43,7 +43,7 @@
 
 ```bash
 # 从本仓库安装（推荐，锁定 tag）
-dsh plugin --profile desktop add 'github:zuojinxin/dsh-sidebar-manager#v0.7.6'
+dsh plugin --profile desktop add 'github:zuojinxin/dsh-sidebar-manager#v0.8.0'
 ```
 
 安装后需**重启 DSH 桌面版**才会生效。
