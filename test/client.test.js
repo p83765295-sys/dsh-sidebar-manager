@@ -210,11 +210,29 @@ test('the caption uses the host type scale, not a hand-picked size', () => {
   assert.match(cap, /font-size:\s*var\(--dsw-font-s-strong-14-font-size,\s*14px\)/);
   assert.match(cap, /font-weight:\s*var\(--dsw-font-s-strong-14-font-weight,\s*500\)/);
   assert.match(cap, /line-height:\s*var\(--dsw-font-s-strong-14-line-height,\s*22px\)/);
-  /* one step quieter than the entries below, which is what makes it a header */
-  assert.match(cap, /color:\s*var\(--dsw-alias-label-secondary/);
+  /* the caption is a section label, so it takes the section-label tier. Measured
+     off a real sidebar, the native "工作区" heading is rgb(109,113,118), which is
+     label-tertiary; label-secondary came out a step darker and made this row
+     read like another navigation entry instead of a group header. */
+  assert.match(cap, /color:\s*var\(--dsw-alias-label-tertiary/);
   /* the old 11px upper-case register is gone for good */
   assert.equal(/text-transform:\s*uppercase/.test(cap), false, 'no upper-casing');
   assert.equal(/font-size:\s*11px/.test(cap), false, 'no 11px caption');
+  dispose();
+});
+
+test('the caption sits on the section-label indent, not on the row indent', () => {
+  const { doc, dispose } = start(both());
+  const css = cssOf(doc);
+  const grp = css.slice(css.indexOf('.snc-group {'), css.indexOf('}', css.indexOf('.snc-group {')));
+  /* Measured off a real sidebar screenshot: the native "工作区" heading starts at
+     x=17 while this caption sat at x=22, so it read as out of column. The box
+     keeps the row's 2px margin so the hover fill stays row-wide, and gives up
+     5px of leading padding instead of widening or shifting the box. */
+  assert.match(grp, /margin:\s*0\s*2px/, 'the box still lines up with a panel row');
+  assert.match(grp, /padding:\s*7px\s+8px\s+7px\s+3px/, 'the label starts 5px further left');
+  const pad = grp.match(/padding:\s*7px\s+8px\s+7px\s+(\d+)px/);
+  assert.equal(Number(pad[1]), 3, '2px margin + 3px padding = the 5px section indent');
   dispose();
 });
 
