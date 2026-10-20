@@ -1,1 +1,8 @@
+node_modules/
+*.log
+.DS_Store
+Thumbs.db
+
+# legacy mockup renders from v0.4 — kept out of the repo, real screenshots live in docs/
 shots/*.png
+_archive-mockups/
