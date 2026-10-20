@@ -771,6 +771,68 @@ test('dragging a sidebar row past a neighbour reorders it in the DOM', () => {
   dispose();
 });
 
+test('a drop suspends the CSS transitions that would otherwise delay the settle', () => {
+  const { doc, dom, dispose } = start(both());
+  /* jsdom has neither matchMedia nor Web Animations, so both are stubbed here;
+     without them the FLIP branch is skipped and the suspension never applies */
+  dom.window.matchMedia = () => ({ matches: false });
+  const played = [];
+  dom.window.Element.prototype.animate = function animate(frames, options) {
+    played.push({ el: this, frames, options });
+    return { addEventListener() {}, cancel() {} };
+  };
+  gear(doc).click();
+  const entries = stubUnits(dom.window, [...doc.querySelectorAll("nav > .snc-entry")]);
+  stubHit(dom.window, entries);
+  /* the FLIP is what animates the swap; a CSS `transition: transform` on the
+     same unit would run on top of it and stretch the movement out, and the
+     carried row's opacity transition would read as the row hesitating. Both
+     have to be off for the frames the change lands in. */
+  const css = doc.querySelector('style[data-plugin-css]').textContent;
+  assert.match(css, /\.snc-entry\[data-snc-flipping="true"\][\s\S]*?transition:\s*none !important/);
+  assert.match(css, /\[data-snc-no-fade="true"\][\s\S]*?transition:\s*none !important/);
+
+  const carried = doc.querySelectorAll('nav > .snc-entry')[0];
+  pointer(dom.window, 'pointerdown', dragHandles(doc)[0], 10, 14);
+  pointer(dom.window, 'pointermove', dom.window.document.body, 10, 70);
+  pointer(dom.window, 'pointerup', dom.window.document.body, 10, 70);
+
+  const flipping = [...doc.querySelectorAll('[data-snc-flipping="true"]')];
+  assert.ok(flipping.length >= 2, 'the moved units have their transition suspended');
+  assert.ok(flipping.includes(carried), 'the carried row is one of them');
+  assert.equal(carried.dataset.sncNoFade, 'true', 'its opacity snaps back rather than fades');
+  assert.ok(played.length >= 2, 'the FLIP is what carries the motion');
+  /* a 200ms FLIP was half the perceived lag; the swap should settle quickly */
+  assert.equal(played[0].options.duration, 160);
+  dispose();
+});
+
+test('a drop still reorders and saves on a host with no matchMedia and no animations', () => {
+  const { doc, dom, dispose } = start(both());
+  /* the guarded call `window.matchMedia?.(...)` returns undefined when the host
+     has no matchMedia, so reading `.matches` off it threw and took the rest of
+     the drop path (reorder commit, save, repaint) down with it. A host without
+     Web Animations hits the same branch. */
+  assert.equal(typeof dom.window.matchMedia, 'undefined', 'this host really lacks matchMedia');
+  assert.equal(typeof dom.window.Element.prototype.animate, 'undefined', 'and Web Animations');
+  gear(doc).click();
+  const entries = stubUnits(dom.window, [...doc.querySelectorAll("nav > .snc-entry")]);
+  stubHit(dom.window, entries);
+
+  const errors = [];
+  dom.window.addEventListener('error', (e) => errors.push(e.message));
+
+  pointer(dom.window, 'pointerdown', dragHandles(doc)[0], 10, 14);
+  pointer(dom.window, 'pointermove', dom.window.document.body, 10, 70);
+  pointer(dom.window, 'pointerup', dom.window.document.body, 10, 70);
+
+  assert.deepEqual(errors, [], 'the drop path throws nothing');
+  assert.deepEqual(orderOf(doc), ['自动化任务', '插件', '上下文洞察', '扩展管理', '任务看板', '记忆系统']);
+  assert.deepEqual(stateOf(dom.window).order, ['自动化任务', '插件', '上下文洞察', '扩展管理', '任务看板', '记忆系统'],
+    'and the order is on disk, not just on screen');
+  dispose();
+});
+
 test('a drag does not select the panel it was started on', () => {
   const { doc, dom, dispose } = start(both());
   gear(doc).click();
