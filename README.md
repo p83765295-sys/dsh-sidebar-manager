@@ -2,12 +2,7 @@
 
 让 DSH 的扩展入口和视图标签支持**折叠、排序、隐藏**。
 
-[![npm version](https://img.shields.io/npm/v/dsh-sidebar-manager?style=flat&label=npm)](https://www.npmjs.com/package/dsh-sidebar-manager)
-[![DSH](https://img.shields.io/badge/DSH-up%20to%200.2.1--rc.2-4D6BFE)](https://github.com/deepseek-ai/deepseek-harness)
-[![License](https://img.shields.io/badge/License-MIT-green)](./LICENSE)
-[![GitHub stars](https://img.shields.io/github/stars/zuojinxin/dsh-sidebar-manager?style=flat&label=Stars)](https://github.com/zuojinxin/dsh-sidebar-manager/stargazers)
-
-[![](https://img.shields.io/badge/powered_by-dsh-4D6BFE?style=flat-square&logo=deepseek&logoColor=white)](https://github.com/deepseek-ai/deepseek-harness)
+[![npm version](https://img.shields.io/npm/v/dsh-sidebar-manager?style=flat&label=npm)](https://www.npmjs.com/package/dsh-sidebar-manager) [![DSH](https://img.shields.io/badge/DSH-up%20to%200.2.1--rc.2-4D6BFE)](https://github.com/deepseek-ai/deepseek-harness) [![License](https://img.shields.io/badge/License-MIT-green)](./LICENSE) [![](https://img.shields.io/badge/powered_by-dsh-4D6BFE?style=flat-square&logo=deepseek&logoColor=white)](https://github.com/deepseek-ai/deepseek-harness)
 
 | 折叠 | 展开（隐藏 + 排序后） | 编辑 |
 | --- | --- | --- |
