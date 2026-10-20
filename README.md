@@ -2,15 +2,9 @@
 
 让 DSH 的扩展入口和视图标签支持**折叠、排序、隐藏**。
 
-<table>
-<tr>
-<td align="center"><img src="docs/screenshots/02-expanded.png" width="240" alt="展开态"><br><sub>展开</sub></td>
-<td align="center"><img src="docs/screenshots/01-folded.png" width="240" alt="折叠态"><br><sub>折叠</sub></td>
-<td align="center"><img src="docs/screenshots/03-editing.png" width="240" alt="编辑态"><br><sub>编辑</sub></td>
-</tr>
-</table>
-
-图 1 展开、图 2 折叠、图 3 编辑。
+| 折叠 | 展开（隐藏 + 排序后） | 编辑 |
+| --- | --- | --- |
+| ![](docs/screenshots/01-folded.png) | ![](docs/screenshots/02-expanded.png) | ![](docs/screenshots/03-editing.png) |
 
 ## 功能
 
