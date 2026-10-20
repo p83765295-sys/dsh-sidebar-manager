@@ -45,7 +45,7 @@ const cssOf = (doc) => doc.querySelector('style[data-plugin-css="dsh-sidebar-nav
 const rows = (doc) => [...doc.querySelectorAll('nav button[class*="panelRow"]')];
 const shadow = (doc) => doc.querySelector('.snc-shell');
 const group = (doc) => doc.querySelector('.snc-group');
-const gear = (doc) => doc.querySelector('.snc-gear');
+const gear = (doc) => doc.querySelector('.snc-bud');
 
 test('wraps the host panel list and adds a group row plus a gear', () => {
   const { doc, dispose } = start();
@@ -61,15 +61,17 @@ test('wraps the host panel list and adds a group row plus a gear', () => {
   const groupRule = css.slice(css.indexOf('.snc-group {'), css.indexOf('}', css.indexOf('.snc-group {')));
   assert.match(groupRule, /min-height:\s*36px/);
   assert.match(groupRule, /padding:\s*7px 8px/);
-  assert.match(groupRule, /gap:\s*8px/);
+  // gap 0: the caption takes the free width, so the two icons sit flush right
+  assert.match(groupRule, /gap:\s*0/);
   assert.match(groupRule, /border-radius:\s*var\(--dsw-radius-md,\s*12px\)/);
-  // gear mirrors the native 28x28 iconButton
-  const gearRule = css.slice(css.indexOf('.snc-gear {'), css.indexOf('}', css.indexOf('.snc-gear {')));
-  assert.match(gearRule, /width:\s*28px/);
-  assert.match(gearRule, /height:\s*28px/);
-  assert.match(gearRule, /border-radius:\s*var\(--dsw-radius-sm,\s*8px\)/);
+  // the gear is a 20px press target next to the 20px chevron: the dead zone
+  // between them is what keeps settings and fold from being hit by one press
+  const gearRule = css.slice(css.indexOf('.snc-bud,\n.snc-chev {'), css.indexOf('}', css.indexOf('.snc-bud,\n.snc-chev {')));
+  assert.match(gearRule, /width:\s*20px/);
+  assert.match(gearRule, /height:\s*20px/);
+  assert.match(gearRule, /border-radius:\s*var\(--dsw-radius-sm,\s*6px\)/);
   // no colour is hardcoded: everything is a live theme token with a fallback
-  assert.match(gearRule, /--dsw-alias-label-secondary/);
+  assert.match(gearRule, /--dsw-alias-label-tertiary/);
   dispose();
 });
 
@@ -91,26 +93,49 @@ test('the group row is the toggle: starts expanded and folds the list', () => {
   assert.equal(shell.dataset.sncFolded, 'false');
   assert.equal(String(stateOf(dom.window).folded), 'false');
   dispose();
+});
 
-test('the group row is a vine divider, not a text entry', () => {
-  const { doc } = start(both());
+test('the group row is a section header, not a seventh extension', () => {
+  const { doc, dispose } = start(both());
   const row = group(doc);
-  /* the row must not read as a seventh extension: no visible text content at
-     all, and no .snc-title / .snc-glyph left from the labelled version */
-  assert.equal(row.textContent.trim(), '', 'the divider carries no visible text');
-  assert.equal(row.querySelector('.snc-title'), null);
-  assert.equal(row.querySelector('.snc-glyph'), null);
+  /* A1: the row is a named group header. It reads "扩展" -- a caption, not a
+     panel name -- and it is styled as tertiary upper-case text so it cannot be
+     mistaken for one of the extension entries below it. */
+  assert.equal(row.querySelector('.snc-caption')?.textContent, '扩展');
+  assert.equal(row.textContent.trim(), '扩展');
+  /* the caption is inert: no press handler, no tab stop of its own */
+  assert.equal(row.querySelector('.snc-caption').tabIndex, -1);
   /* the name survives where it still has to be reachable */
   assert.equal(row.getAttribute('aria-label'), '收起扩展管理');
   assert.equal(row.title, '收起扩展管理（点击切换）');
-  /* and the decoration is a real inline path, not a background image */
-  const vine = row.querySelector('.snc-vine');
-  assert.ok(vine, 'the vine element exists');
-  assert.ok(vine.querySelector('path.snc-vine-line')?.getAttribute('d'), 'the vine is a path');
-  assert.equal(vine.querySelectorAll('.snc-leaf').length, 3, 'three leaves hang off the vine');
-  assert.equal(row.querySelectorAll('.snc-vine-chevron').length, 1, 'one chevron still advertises the fold');
+  /* the decoration is a real inline glyph, not a background image: the chevron
+     svg is the only inline graphic left on the row now that the vine is gone */
+  assert.ok(row.querySelector('.snc-chev > svg'), 'the chevron is an inline svg');
+  /* the trailing edge carries exactly two actions, settings then fold */
+  const tail = [...row.children].slice(-2);
+  assert.deepEqual(tail.map((n) => n.className), ['snc-bud', 'snc-chev']);
+  assert.equal(row.lastElementChild.className, 'snc-chev', 'the chevron is last');
   dispose();
 });
+
+test('the chevron reflects the fold state, the row is what folds', () => {
+  const { doc, dispose } = start(both());
+  const row = group(doc);
+  const chev = row.querySelector('.snc-chev');
+  /* the chevron is state, not a control: it is inert and untabbable, so the
+     only way to fold is the row itself (arrow keys never land on it) */
+  assert.equal(chev.getAttribute('aria-hidden'), 'true');
+  assert.equal(chev.tabIndex, -1);
+  assert.equal(chev.tagName, 'BUTTON', 'a button so the fold can also be pressed on it');
+  /* the row's own attribute drives the rotation, so CSS needs no JS repaint */
+  assert.match(cssOf(doc), /\.snc-group\[aria-expanded="false"\]\s*\.snc-chev\s*\{\s*transform:\s*rotate\(-90deg\)/);
+  assert.equal(row.dataset.sncFolded, 'false');
+  /* a press that lands on the chevron still folds: it bubbles to the row */
+  chev.click();
+  assert.equal(row.dataset.sncFolded, 'true', 'pressing the chevron folds the row');
+  row.click();
+  assert.equal(row.dataset.sncFolded, 'false');
+  dispose();
 });
 
 test('the group row is keyboard operable', () => {
@@ -132,10 +157,10 @@ test('a folded list is restored from storage on startup', () => {
   dispose();
 });
 
-test('the gear is inside the group row, at its trailing edge', () => {
+test('the gear is inside the group row, just before the chevron', () => {
   const { doc, dispose } = start();
   assert.equal(gear(doc).parentElement, group(doc), 'gear lives in the group row, not the nav');
-  assert.equal(group(doc).lastElementChild, gear(doc), 'gear is the trailing item');
+  assert.equal(gear(doc).nextElementSibling?.className, 'snc-chev', 'gear sits ahead of the chevron');
   assert.equal(gear(doc).getAttribute('aria-pressed'), 'false');
   // clicking the gear must not toggle the group
   gear(doc).click();
@@ -242,7 +267,7 @@ test('survives a sidebar remount and ignores unknown entries', async () => {
   assert.equal(nextRows[1].hasAttribute('data-snc-hidden'), false);
   // one shell per wrapper, one gear per shell
   assert.equal(doc.querySelectorAll('.snc-shell').length, 1);
-  assert.equal(doc.querySelectorAll('.snc-gear').length, 1);
+  assert.equal(doc.querySelectorAll('.snc-bud').length, 1);
   dispose();
 });
 
@@ -252,7 +277,7 @@ test('host disable restores the DOM completely', async () => {
   assert.equal(doc.querySelectorAll('.snc-entry').length, 6);
   dispose();
   assert.equal(doc.querySelector('.snc-shell'), null);
-  assert.equal(doc.querySelector('.snc-gear'), null);
+  assert.equal(doc.querySelector('.snc-bud'), null);
   assert.equal(doc.querySelector('.snc-group'), null);
   assert.equal(doc.querySelector('[data-plugin-css="dsh-sidebar-nav-collapse"]'), null);
   assert.equal(doc.querySelectorAll('.snc-entry').length, 0);
@@ -476,7 +501,7 @@ test('a corrupt record never breaks the sidebar', () => {
   client.apply({ effect: (fn) => { disposers.push(fn()); } });
   const doc = dom.window.document;
   assert.ok(shadow(doc), 'shell still wraps the list');
-  assert.equal(doc.querySelectorAll('.snc-gear').length, 1);
+  assert.equal(doc.querySelectorAll('.snc-bud').length, 1);
   assert.deepEqual(stateOf(dom.window), rec(), 'bad JSON is replaced by defaults');
   for (const fn of disposers.reverse()) fn();
 });
