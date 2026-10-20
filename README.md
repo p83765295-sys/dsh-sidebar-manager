@@ -18,20 +18,16 @@
 
 ## 安装
 
+从 npm 安装：
+
 ```bash
 dsh plugin --profile desktop add dsh-sidebar-manager
 ```
 
-想装某个固定版本（推荐，避免自动升级带来意外）：
+从 GitHub 安装：
 
 ```bash
-dsh plugin --profile desktop add 'dsh-sidebar-manager@0.8.0'
-```
-
-也可以直接从 GitHub 装，能第一时间拿到未发布到 npm 的修复：
-
-```bash
-dsh plugin --profile desktop add 'github:zuojinxin/dsh-sidebar-manager#v0.8.0'
+dsh plugin --profile desktop add 'github:zuojinxin/dsh-sidebar-manager#v0.8.2'
 ```
 
 装完重启 DSH 桌面版生效。
