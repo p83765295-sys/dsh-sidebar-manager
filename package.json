@@ -1,9 +1,23 @@
 {
   "name": "dsh-sidebar-manager",
-  "version": "0.8.4",
+  "version": "0.8.5",
   "license": "MIT",
   "type": "module",
-  "description": "DSH sidebar extension manager: a collapsible group row folds the panel list, and its gear manages two groups of show/hide checkboxes — sidebar panels and conversation view tabs (local build)",
+  "description": "DSH sidebar manager: collapses the left panel list into one group row, and its gear opens an edit mode to show, hide and drag-reorder sidebar extension entries and conversation view tabs",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zuojinxin/dsh-sidebar-manager.git"
+  },
+  "homepage": "https://github.com/zuojinxin/dsh-sidebar-manager#readme",
+  "bugs": {
+    "url": "https://github.com/zuojinxin/dsh-sidebar-manager/issues"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "sidebar"
+  ],
   "main": "lib/index.js",
   "exports": {
     ".": "./lib/index.js",
