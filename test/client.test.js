@@ -379,3 +379,19 @@ test('hiding a sidebar panel and a view tab are independent stores', () => {
   assert.equal(doc.querySelectorAll('.snc-shell').length, 1);
   dispose();
 });
+
+test('a row without an aria-label falls back to its own text and skips the glyph slot', () => {
+  /* the glyph slot text ("★") is rendered by whichever plugin owns the entry,
+     so it can change at any time; the label must not ride on it */
+  const plain = '<button class="_2H3hWW_panelRow"><span class="_2H3hWW_panelGlyph">★</span><span class="_2H3hWW_panelTitle">插件</span></button>';
+  const { doc, dom, dispose } = start(`<nav class="_2H3hWW_panelList" aria-label="全局面板">${plain}</nav>`);
+  gear(doc).click();
+  const row = doc.querySelector('button[class*="panelRow"]');
+  const box = row.parentElement.querySelector('[data-snc-check]');
+  box.checked = false;
+  box.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+  const stored = JSON.parse(dom.window.localStorage.getItem('dsh-sidebar-nav-collapse:hidden'));
+  assert.equal(stored.length, 1);
+  assert.doesNotMatch(stored[0], /★/, 'glyph text is not part of the key');
+  dispose();
+});
