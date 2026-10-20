@@ -166,6 +166,20 @@ await tab.evaluate(() => {
 });
 await new Promise((r) => setTimeout(r, 80));
 report.hiddenWhileEditing = await measure();
+// while editing, a hidden tab must keep its LABEL readable next to its box
+report.hiddenLabels = await tab.evaluate(() =>
+  [...document.querySelectorAll('.snc-tabitem')].map((item) => {
+    const tabEl = item.querySelector('[role="tab"]');
+    const cs = getComputedStyle(tabEl);
+    return {
+      tab: tabEl.textContent.trim(),
+      hidden: tabEl.dataset.sncHidden === 'true',
+      display: cs.display,
+      opacity: cs.opacity,
+      boxPresent: !!item.querySelector('.snc-tabbox'),
+    };
+  }),
+);
 await shot('v4-3-editing-hidden.png');
 
 // 4. leave edit mode: hidden entries go away
