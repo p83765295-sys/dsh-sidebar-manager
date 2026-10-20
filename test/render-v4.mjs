@@ -130,6 +130,24 @@ await shot('v4-1-expanded.png');
 // 2. edit mode: both groups get checkboxes
 await click('.snc-gear');
 report.editing = await measure();
+// the box must share the label's centre line
+report.alignment = await tab.evaluate(() => {
+  return [...document.querySelectorAll('.snc-tabitem')].map((item) => {
+    const box = item.querySelector('.snc-tabbox').getBoundingClientRect();
+    const label = item.querySelector('[role="tab"]').getBoundingClientRect();
+    const range = document.createRange();
+    range.selectNodeContents(item.querySelector('[role="tab"]'));
+    const text = range.getBoundingClientRect();
+    return {
+      tab: item.textContent.trim(),
+      boxCenterY: +(box.top + box.height / 2).toFixed(1),
+      textCenterY: +(text.top + text.height / 2).toFixed(1),
+      deltaY: +Math.abs((box.top + box.height / 2) - (text.top + text.height / 2)).toFixed(2),
+      boxSize: `${Math.round(box.width)}x${Math.round(box.height)}`,
+      labelBoxTop: +label.top.toFixed(1),
+    };
+  });
+});
 await shot('v4-2-editing.png');
 
 // 3. hide two view tabs + one panel
