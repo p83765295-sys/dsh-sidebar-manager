@@ -157,6 +157,49 @@ test('a folded list is restored from storage on startup', () => {
   dispose();
 });
 
+test('the fold state survives a reload, both ways round', () => {
+  /* fold it, then boot a SECOND window off the same storage and check the row
+     comes back folded -- this is the "restart DSH and my layout is still
+     there" promise, tested end to end rather than by reading the record */
+  const first = start();
+  group(first.doc).click();
+  assert.equal(shadow(first.doc).dataset.sncFolded, 'true');
+  const saved = stateOf(first.dom.window);
+  first.dispose();
+  assert.equal(saved.folded, true, 'the folded flag is in the record');
+
+  const again = start(undefined, saved);
+  assert.equal(shadow(again.doc).dataset.sncFolded, 'true', 'boots folded');
+  assert.equal(group(again.doc).getAttribute('aria-expanded'), 'false');
+  /* and expanding is remembered just as firmly -- an expanded list must not be
+     re-folded on the next boot */
+  group(again.doc).click();
+  const expanded = stateOf(again.dom.window);
+  again.dispose();
+  assert.equal(expanded.folded, false);
+  const third = start(undefined, expanded);
+  assert.equal(shadow(third.doc).dataset.sncFolded, 'false', 'boots expanded');
+  assert.equal(third.doc.querySelector('nav[class*="panelList"]').style.display, '');
+  third.dispose();
+});
+
+test('the expanded header is joined to its list by a hairline, not a fill', () => {
+  const { doc, dispose } = start(both());
+  const css = cssOf(doc);
+  /* the old bug: a permanently tinted band that read as "selected" */
+  assert.equal(/\.snc-group\[aria-expanded="true"\]\s*\{\s*background:/.test(css), false,
+    'no rule may fill the row just because it is expanded');
+  /* the new sign: a 1px background-image on the bottom edge, only while open */
+  const open = css.slice(css.indexOf('.snc-shell[data-snc-folded="false"]'), css.indexOf('}', css.indexOf('.snc-shell[data-snc-folded="false"]')));
+  assert.match(open, /background-image:\s*linear-gradient/);
+  assert.match(open, /background-size:\s*calc\(100% - 16px\)\s*1px/);
+  assert.match(open, /background-position:\s*8px 100%/);
+  /* hover must composite over it, not replace it */
+  const hover = css.slice(css.indexOf('.snc-shell[data-snc-folded="false"] > .snc-group:hover'));
+  assert.match(hover, /background-color:/, 'hover sets colour only, so the hairline survives');
+  dispose();
+});
+
 test('the gear is inside the group row, just before the chevron', () => {
   const { doc, dispose } = start();
   assert.equal(gear(doc).parentElement, group(doc), 'gear lives in the group row, not the nav');
