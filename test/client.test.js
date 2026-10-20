@@ -240,3 +240,108 @@ test('English label is also matched without touching unrelated nav', () => {
   assert.equal(doc.querySelector('nav[aria-label="Local"]').parentElement.tagName, 'BODY');
   dispose();
 });
+
+/* ---------------------- conversation view tabs (second group) ---------------------- */
+const tabs = (labels = ['对话', '上下页', '画廊', '编队', '记忆系统'], activeIndex = 0) =>
+  `<div class="_Dc7zOa_tabs" role="tablist" data-conversation-tabs="">${labels
+    .map((l, i) => `<button type="button" role="tab" aria-selected="${i === activeIndex}" class="_Dc7zOa_tab${i === activeIndex ? ' _Dc7zOa_tabActive' : ''}">${l}</button>`)
+    .join('')}</div>`;
+const both = (labels, activeIndex) => navigation() + tabs(labels, activeIndex);
+const strip = (doc) => doc.querySelector('div[data-conversation-tabs]');
+const tabEls = (doc) => [...strip(doc).querySelectorAll('button[role="tab"]')];
+const tabByLabel = (doc, label) => tabEls(doc).find((t) => t.textContent === label);
+
+test('view tabs are untouched until edit mode, then each gets its own checkbox', () => {
+  const { doc, dispose } = start(both());
+  assert.equal(strip(doc).querySelectorAll('[data-snc-tab-check]').length, 0, 'no boxes at rest');
+  assert.equal(strip(doc).querySelectorAll('.snc-tabitem').length, 0, 'no wrappers at rest');
+  assert.equal(tabEls(doc).length, 5);
+
+  gear(doc).click();
+  assert.equal(strip(doc).dataset.sncEditing, 'true');
+  assert.equal(strip(doc).querySelectorAll('[data-snc-tab-check]').length, 5);
+  // the checkbox is a SIBLING, never a child: a nested input eats the click
+  for (const box of strip(doc).querySelectorAll('[data-snc-tab-check]')) {
+    assert.equal(box.querySelector('button'), null);
+    assert.equal(box.closest('button'), null, 'input must not live inside a tab button');
+  }
+  assert.match(cssOf(doc), /data-conversation-tabs\]\[data-snc-editing="true"\]\s*\{\s*flex-wrap:\s*wrap/);
+
+  gear(doc).click();
+  assert.equal(strip(doc).dataset.sncEditing, 'false');
+  assert.equal(strip(doc).querySelectorAll('.snc-tabitem').length, 0, 'unwrapped on exit');
+});
+
+test('unchecking a view tab hides it and is remembered', () => {
+  const { doc, dom, dispose } = start(both());
+  gear(doc).click();
+  const box = strip(doc).querySelectorAll('[data-snc-tab-check]')[2];
+  box.checked = false;
+  box.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+  assert.equal(tabByLabel(doc, '画廊').dataset.sncHidden, 'true');
+  assert.deepEqual(JSON.parse(dom.window.localStorage.getItem('dsh-sidebar-nav-collapse:views')), ['画廊']);
+  // still listed while editing so it can be brought back
+  assert.equal(tabByLabel(doc, '画廊').hasAttribute('data-snc-hidden'), true);
+  gear(doc).click();
+  assert.equal(tabByLabel(doc, '画廊').dataset.sncHidden, 'true', 'stays hidden after exit');
+  assert.match(cssOf(doc), /button\[role="tab"\]\[data-snc-hidden="true"\]\s*\{\s*display:\s*none/);
+});
+
+test('the active view cannot be hidden', () => {
+  const { doc, dom, dispose } = start(both(['对话', '上下页', '画廊'], 2));
+  gear(doc).click();
+  const box = strip(doc).querySelectorAll('[data-snc-tab-check]')[2];
+  assert.equal(box.checked, true);
+  box.checked = false;
+  box.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+  assert.equal(tabByLabel(doc, '画廊').hasAttribute('data-snc-hidden'), false, 'active tab stays visible');
+  assert.equal(box.checked, true, 'the box snaps back');
+  assert.equal(box.getAttribute('aria-invalid'), 'true');
+  assert.equal(dom.window.localStorage.getItem('dsh-sidebar-nav-collapse:views'), null);
+});
+
+test('stored hidden views are applied on boot and the active one is rescued', async () => {
+  const dom = new JSDOM(`<!doctype html><html><head></head><body>${both(['对话', '上下页', '画廊'], 1)}</body></html>`, { url: 'http://localhost/' });
+  dom.window.localStorage.setItem('dsh-sidebar-nav-collapse:views', JSON.stringify(['画廊', '上下页']));
+  let bundle;
+  const code = fs.readFileSync(path, 'utf8');
+  vm.runInNewContext(code, {
+    window: Object.assign(dom.window, { __ModuleLoader__: { load: (v) => { bundle = v; } } }),
+    document: dom.window.document,
+    MutationObserver: dom.window.MutationObserver,
+  });
+  const client = bundle.factory(() => { throw Error('unexpected dependency'); });
+  client.apply({ effect: (fn) => { fn(); } });
+  const doc = dom.window.document;
+  assert.equal(tabByLabel(doc, '画廊').dataset.sncHidden, 'true');
+  assert.equal(tabByLabel(doc, '上下页').hasAttribute('data-snc-hidden'), false, 'active view is rescued');
+  assert.deepEqual(JSON.parse(dom.window.localStorage.getItem('dsh-sidebar-nav-collapse:views')), ['画廊']);
+});
+
+test('tabs that mount after the plugin are picked up', async () => {
+  const { doc, dispose } = start(navigation());
+  assert.equal(strip(doc), null);
+  gear(doc).click();               // editing first: the strip is not mounted yet
+  doc.body.insertAdjacentHTML('beforeend', tabs());
+  await flush();
+  assert.equal(strip(doc).dataset.sncEditing, 'true');
+  assert.equal(strip(doc).querySelectorAll('[data-snc-tab-check]').length, 5, 'late strip is managed');
+  dispose();
+  assert.equal(doc.querySelectorAll('.snc-tabitem').length, 0);
+  assert.equal(doc.querySelectorAll('[data-snc-tab-check]').length, 0);
+  assert.equal(strip(doc).hasAttribute('data-snc-editing'), false);
+});
+
+test('hiding a sidebar panel and a view tab are independent stores', () => {
+  const { doc, dom, dispose } = start(both());
+  gear(doc).click();
+  assert.equal(doc.querySelectorAll('[data-snc-check]').length, 6);
+  assert.equal(doc.querySelectorAll('[data-snc-tab-check]').length, 5);
+  const panelBox = doc.querySelectorAll('[data-snc-check]')[0];
+  panelBox.checked = false;
+  panelBox.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+  assert.deepEqual(JSON.parse(dom.window.localStorage.getItem('dsh-sidebar-nav-collapse:hidden')), ['插件']);
+  assert.equal(dom.window.localStorage.getItem('dsh-sidebar-nav-collapse:views'), null, 'tab store untouched');
+  assert.equal(doc.querySelectorAll('.snc-shell').length, 1);
+  dispose();
+});
