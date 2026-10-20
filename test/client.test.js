@@ -13,10 +13,16 @@ const panel = (name) => `<button class="_2H3hWW_panelRow" aria-label="${name}"><
 const navigation = (names = ['插件', '自动化任务', '上下文洞察', '扩展管理', '任务看板', '记忆系统']) =>
   `<nav class="_2H3hWW_panelList" aria-label="全局面板">${names.map(panel).join('')}</nav><div id="workspaces">Workspace and sessions</div>`;
 
-function start(html = navigation(), storedHidden, storedFolded) {
+const STATE_KEY = 'dsh-sidebar-nav-collapse:state';
+/* the fused record: one key, one version */
+const stateOf = (window) => {
+  const raw = window.localStorage.getItem(STATE_KEY);
+  return raw === null ? null : JSON.parse(raw);
+};
+/* boot with an explicit record (or nothing at all) */
+function start(html = navigation(), record) {
   const dom = new JSDOM(`<!doctype html><html><head></head><body>${html}</body></html>`, { url: 'http://localhost/' });
-  if (storedHidden !== undefined) dom.window.localStorage.setItem('dsh-sidebar-nav-collapse:hidden', storedHidden);
-  if (storedFolded !== undefined) dom.window.localStorage.setItem('dsh-sidebar-nav-collapse:folded', storedFolded);
+  if (record !== undefined) dom.window.localStorage.setItem(STATE_KEY, JSON.stringify(record));
   let bundle;
   const code = fs.readFileSync(path, 'utf8');
   assert.match(code, /window\.__ModuleLoader__\.load/, 'client bundle must exist');
@@ -30,6 +36,7 @@ function start(html = navigation(), storedHidden, storedFolded) {
   client.apply({ effect: (fn) => { disposers.push(fn()); } });
   return { dom, doc: dom.window.document, dispose: () => { for (const fn of disposers.reverse()) fn(); } };
 }
+const rec = (over = {}) => ({ v: 1, folded: false, hidden: [], views: [], ...over });
 const flush = async () => { await Promise.resolve(); await Promise.resolve(); };
 const cssOf = (doc) => doc.querySelector('style[data-plugin-css="dsh-sidebar-nav-collapse"]').textContent;
 const rows = (doc) => [...doc.querySelectorAll('nav button[class*="panelRow"]')];
@@ -75,11 +82,11 @@ test('the group row is the toggle: starts expanded and folds the list', () => {
   assert.equal(group(doc).getAttribute('aria-expanded'), 'false');
   assert.equal(group(doc).getAttribute('aria-label'), '展开扩展管理');
   // folding is remembered
-  assert.equal(dom.window.localStorage.getItem('dsh-sidebar-nav-collapse:folded'), 'true');
+  assert.equal(String(stateOf(dom.window).folded), 'true');
 
   group(doc).click();
   assert.equal(shell.dataset.sncFolded, 'false');
-  assert.equal(dom.window.localStorage.getItem('dsh-sidebar-nav-collapse:folded'), 'false');
+  assert.equal(String(stateOf(dom.window).folded), 'false');
   dispose();
 });
 
@@ -96,7 +103,7 @@ test('the group row is keyboard operable', () => {
 });
 
 test('a folded list is restored from storage on startup', () => {
-  const { doc, dispose } = start(undefined, undefined, 'true');
+  const { doc, dispose } = start(undefined, rec({ folded: true }));
   assert.equal(shadow(doc).dataset.sncFolded, 'true');
   assert.equal(group(doc).getAttribute('aria-expanded'), 'false');
   dispose();
@@ -143,7 +150,7 @@ test('unchecking hides an extension and persists it', async () => {
   box.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
   await flush();
   assert.equal(entry.dataset.sncHidden, 'true');
-  assert.deepEqual(JSON.parse(dom.window.localStorage.getItem('dsh-sidebar-nav-collapse:hidden')), ['任务看板']);
+  assert.deepEqual(stateOf(dom.window).hidden, ['任务看板']);
 
   gear(doc).click();
   const after = rows(doc).find((r) => r.getAttribute('aria-label') === '任务看板');
@@ -153,7 +160,7 @@ test('unchecking hides an extension and persists it', async () => {
 });
 
 test('hidden extensions stay reachable while editing so they can be restored', () => {
-  const { doc, dispose } = start(navigation(), JSON.stringify(['记忆系统']));
+  const { doc, dispose } = start(navigation(), rec({ hidden: ['记忆系统'] }));
   const shell = shadow(doc);
   const row = rows(doc).find((r) => r.getAttribute('aria-label') === '记忆系统');
   assert.equal(row.dataset.sncHidden, 'true');
@@ -168,7 +175,7 @@ test('hidden extensions stay reachable while editing so they can be restored', (
 });
 
 test('a folded list still expands into edit mode so the gear stays usable', () => {
-  const { doc, dispose } = start(undefined, undefined, 'true');
+  const { doc, dispose } = start(undefined, rec({ folded: true }));
   const shell = shadow(doc);
   assert.equal(shell.dataset.sncFolded, 'true');
   // folding is CSS; the editing flag must win over it
@@ -187,7 +194,7 @@ test('leaving edit mode unfolds so the change is visible', async () => {
   gear(doc).click();
   assert.equal(shadow(doc).dataset.sncFolded, 'false', 'edit exit unfolds the list');
   assert.equal(group(doc).getAttribute('aria-expanded'), 'true');
-  assert.equal(dom.window.localStorage.getItem('dsh-sidebar-nav-collapse:folded'), 'false');
+  assert.equal(String(stateOf(dom.window).folded), 'false');
   // the user can fold again right away
   group(doc).click();
   assert.equal(shadow(doc).dataset.sncFolded, 'true');
@@ -195,7 +202,7 @@ test('leaving edit mode unfolds so the change is visible', async () => {
 });
 
 test('survives a sidebar remount and ignores unknown entries', async () => {
-  const { doc, dispose } = start(undefined, JSON.stringify(['插件', '早已卸载的插件']));
+  const { doc, dispose } = start(undefined, rec({ hidden: ['插件', '早已卸载的插件'] }));
   assert.equal(rows(doc).find((r) => r.getAttribute('aria-label') === '插件').dataset.sncHidden, 'true');
   assert.equal(rows(doc).length, 6);
   const nav = doc.querySelector('nav');
@@ -280,7 +287,7 @@ test('unchecking a view tab hides it and is remembered', () => {
   box.checked = false;
   box.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
   assert.equal(tabByLabel(doc, '上下页').dataset.sncHidden, 'true');
-  assert.deepEqual(JSON.parse(dom.window.localStorage.getItem('dsh-sidebar-nav-collapse:views')), ['上下页']);
+  assert.deepEqual(stateOf(dom.window).views, ['上下页']);
   // still listed while editing so it can be brought back
   assert.equal(tabByLabel(doc, '上下页').hasAttribute('data-snc-hidden'), true);
   gear(doc).click();
@@ -297,14 +304,13 @@ test('the chat view has no checkbox and can never be hidden', () => {
   assert.ok(chat.parentElement.classList.contains('snc-tabitem'));
   // a stale store entry from an older build is reconciled away on paint
   assert.equal(chat.hasAttribute('data-snc-hidden'), false);
-  const stored = dom.window.localStorage.getItem('dsh-sidebar-nav-collapse:views');
-  assert.ok(stored === null || !JSON.parse(stored).includes('对话'));
+  assert.deepEqual(stateOf(dom.window).views, [], 'chat never lands in the record');
   dispose();
 });
 
 test('a stored hidden chat entry is dropped on boot', async () => {
   const dom = new JSDOM(`<!doctype html><html><head></head><body>${both(['对话', '上下页', '画廊'], 0)}</body></html>`, { url: 'http://localhost/' });
-  dom.window.localStorage.setItem('dsh-sidebar-nav-collapse:views', JSON.stringify(['对话', '画廊']));
+  dom.window.localStorage.setItem(STATE_KEY, JSON.stringify(rec({ views: ['对话', '画廊'] })));
   let bundle;
   const code = fs.readFileSync(path, 'utf8');
   vm.runInNewContext(code, {
@@ -317,7 +323,7 @@ test('a stored hidden chat entry is dropped on boot', async () => {
   const doc = dom.window.document;
   assert.equal(tabByLabel(doc, '对话').hasAttribute('data-snc-hidden'), false, 'chat is always visible');
   assert.equal(tabByLabel(doc, '画廊').dataset.sncHidden, 'true', 'the rest still applies');
-  assert.deepEqual(JSON.parse(dom.window.localStorage.getItem('dsh-sidebar-nav-collapse:views')), ['画廊'], 'chat pruned from the store');
+  assert.deepEqual(stateOf(dom.window).views, ['画廊'], 'chat pruned from the store');
 });
 
 test('the active view cannot be hidden', () => {
@@ -331,12 +337,12 @@ test('the active view cannot be hidden', () => {
   assert.equal(tabByLabel(doc, '画廊').hasAttribute('data-snc-hidden'), false, 'active tab stays visible');
   assert.equal(box.checked, true, 'the box snaps back');
   assert.equal(box.getAttribute('aria-invalid'), 'true');
-  assert.equal(dom.window.localStorage.getItem('dsh-sidebar-nav-collapse:views'), null);
+  assert.deepEqual(stateOf(dom.window).views, [], 'a refused hide leaves the record untouched');
 });
 
 test('stored hidden views are applied on boot and the active one is rescued', async () => {
   const dom = new JSDOM(`<!doctype html><html><head></head><body>${both(['对话', '上下页', '画廊'], 1)}</body></html>`, { url: 'http://localhost/' });
-  dom.window.localStorage.setItem('dsh-sidebar-nav-collapse:views', JSON.stringify(['画廊', '上下页']));
+  dom.window.localStorage.setItem(STATE_KEY, JSON.stringify(rec({ views: ['画廊', '上下页'] })));
   let bundle;
   const code = fs.readFileSync(path, 'utf8');
   vm.runInNewContext(code, {
@@ -349,7 +355,7 @@ test('stored hidden views are applied on boot and the active one is rescued', as
   const doc = dom.window.document;
   assert.equal(tabByLabel(doc, '画廊').dataset.sncHidden, 'true');
   assert.equal(tabByLabel(doc, '上下页').hasAttribute('data-snc-hidden'), false, 'active view is rescued');
-  assert.deepEqual(JSON.parse(dom.window.localStorage.getItem('dsh-sidebar-nav-collapse:views')), ['画廊']);
+  assert.deepEqual(stateOf(dom.window).views, ['画廊']);
 });
 
 test('tabs that mount after the plugin are picked up', async () => {
@@ -366,7 +372,7 @@ test('tabs that mount after the plugin are picked up', async () => {
   assert.equal(strip(doc).hasAttribute('data-snc-editing'), false);
 });
 
-test('hiding a sidebar panel and a view tab are independent stores', () => {
+test('the two stores stay independent inside the one record', () => {
   const { doc, dom, dispose } = start(both());
   gear(doc).click();
   assert.equal(doc.querySelectorAll('[data-snc-check]').length, 6);
@@ -374,9 +380,100 @@ test('hiding a sidebar panel and a view tab are independent stores', () => {
   const panelBox = doc.querySelectorAll('[data-snc-check]')[0];
   panelBox.checked = false;
   panelBox.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
-  assert.deepEqual(JSON.parse(dom.window.localStorage.getItem('dsh-sidebar-nav-collapse:hidden')), ['插件']);
-  assert.equal(dom.window.localStorage.getItem('dsh-sidebar-nav-collapse:views'), null, 'tab store untouched');
+  assert.deepEqual(stateOf(dom.window).hidden, ['插件']);
+  assert.deepEqual(stateOf(dom.window).views, [], 'view list untouched by a panel toggle');
   assert.equal(doc.querySelectorAll('.snc-shell').length, 1);
+  dispose();
+});
+
+test('the whole record lives under one versioned key', () => {
+  const { doc, dom, dispose } = start();
+  gear(doc).click();
+  const box = doc.querySelector('[data-snc-check]');
+  box.checked = false;
+  box.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+  group(doc).click();
+  const keys = Object.keys(dom.window.localStorage).filter((k) => k.startsWith('dsh-sidebar-nav-collapse:'));
+  assert.deepEqual(keys, [STATE_KEY], 'no per-field keys are written');
+  const record = stateOf(dom.window);
+  assert.equal(record.v, 1);
+  assert.equal(record.folded, true);
+  assert.deepEqual(record.hidden, ['插件']);
+  assert.deepEqual(record.views, []);
+  dispose();
+});
+
+test('a pre-version record is migrated on first boot, then written back', () => {
+  const dom = new JSDOM(`<!doctype html><html><head></head><body>${navigation()}</body></html>`, { url: 'http://localhost/' });
+  dom.window.localStorage.setItem('dsh-sidebar-nav-collapse:hidden', JSON.stringify(['记忆系统']));
+  dom.window.localStorage.setItem('dsh-sidebar-nav-collapse:views', JSON.stringify(['画廊']));
+  dom.window.localStorage.setItem('dsh-sidebar-nav-collapse:folded', 'true');
+  let bundle;
+  vm.runInNewContext(fs.readFileSync(path, 'utf8'), {
+    window: Object.assign(dom.window, { __ModuleLoader__: { load: (v) => { bundle = v; } } }),
+    document: dom.window.document,
+    MutationObserver: dom.window.MutationObserver,
+  });
+  const client = bundle.factory(() => { throw Error('unexpected dependency'); });
+  const disposers = [];
+  client.apply({ effect: (fn) => { disposers.push(fn()); } });
+  const doc = dom.window.document;
+  // the migrated record is written on boot, so a rollback finds a clean one
+  assert.deepEqual(stateOf(dom.window), rec({ folded: true, hidden: ['记忆系统'], views: ['画廊'] }));
+  assert.equal(shadow(doc).dataset.sncFolded, 'true');
+  gear(doc).click();
+  const row = rows(doc).find((r) => (r.getAttribute('aria-label') || '').trim() === '记忆系统');
+  assert.ok(row, 'migrated hidden row is reachable in edit mode');
+  assert.equal(row.dataset.sncHidden, 'true');
+  for (const fn of disposers.reverse()) fn();
+});
+
+test('a record from a newer schema is ignored instead of half-read', () => {
+  const { doc, dom, dispose } = start(navigation(), { v: 99, folded: true, hidden: ['插件'], views: [] });
+  assert.equal(shadow(doc).dataset.sncFolded, 'false', 'unknown version falls back to defaults');
+  assert.equal(rows(doc)[0].hasAttribute('data-snc-hidden'), false);
+  assert.equal(stateOf(dom.window).v, 1, 'the record is rewritten in the current schema');
+  dispose();
+});
+
+test('a corrupt record never breaks the sidebar', () => {
+  const dom = new JSDOM(`<!doctype html><html><head></head><body>${navigation()}</body></html>`, { url: 'http://localhost/' });
+  dom.window.localStorage.setItem(STATE_KEY, '{not json');
+  let bundle;
+  vm.runInNewContext(fs.readFileSync(path, 'utf8'), {
+    window: Object.assign(dom.window, { __ModuleLoader__: { load: (v) => { bundle = v; } } }),
+    document: dom.window.document,
+    MutationObserver: dom.window.MutationObserver,
+  });
+  const client = bundle.factory(() => { throw Error('unexpected dependency'); });
+  const disposers = [];
+  client.apply({ effect: (fn) => { disposers.push(fn()); } });
+  const doc = dom.window.document;
+  assert.ok(shadow(doc), 'shell still wraps the list');
+  assert.equal(doc.querySelectorAll('.snc-gear').length, 1);
+  assert.deepEqual(stateOf(dom.window), rec(), 'bad JSON is replaced by defaults');
+  for (const fn of disposers.reverse()) fn();
+});
+
+test('hidden tabs carry no extra decoration, only the fade the sidebar uses', () => {
+  const { doc, dispose } = start(both());
+  const css = cssOf(doc);
+  assert.doesNotMatch(css, /line-through/, 'no strikethrough on hidden tabs');
+  const ruleStart = css.indexOf('> .snc-tabitem > button[role="tab"][data-snc-hidden="true"]');
+  assert.ok(ruleStart >= 0, 'hidden-tab rule exists');
+  const rule = css.slice(ruleStart, css.indexOf('}', ruleStart));
+  assert.match(rule, /opacity:\s*\.45/);
+  // the sidebar row rule is the reference the tab must match
+  const rowStart = css.indexOf('> .snc-entry:has(> button[data-snc-hidden="true"]) > button[class*="panelRow"]');
+  assert.ok(rowStart >= 0, 'hidden-row rule exists');
+  assert.match(css.slice(rowStart, css.indexOf('}', rowStart)), /opacity:\s*\.45/);
+  gear(doc).click();
+  const tab = [...doc.querySelectorAll('[role="tab"]')].find((t) => t.textContent.trim() === '记忆系统');
+  const box = tab.parentElement.querySelector('[data-snc-tab-check]');
+  box.checked = false;
+  box.dispatchEvent(new doc.defaultView.Event('change', { bubbles: true }));
+  assert.equal(tab.dataset.sncHidden, 'true');
+  assert.equal(doc.defaultView.getComputedStyle(tab).textDecorationLine, 'none');
   dispose();
 });
 
@@ -390,7 +487,7 @@ test('a row without an aria-label falls back to its own text and skips the glyph
   const box = row.parentElement.querySelector('[data-snc-check]');
   box.checked = false;
   box.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
-  const stored = JSON.parse(dom.window.localStorage.getItem('dsh-sidebar-nav-collapse:hidden'));
+  const stored = stateOf(dom.window).hidden;
   assert.equal(stored.length, 1);
   assert.doesNotMatch(stored[0], /★/, 'glyph text is not part of the key');
   dispose();
