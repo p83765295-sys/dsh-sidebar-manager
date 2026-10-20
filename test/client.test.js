@@ -259,7 +259,7 @@ test('view tabs are untouched until edit mode, then each gets its own checkbox',
 
   gear(doc).click();
   assert.equal(strip(doc).dataset.sncEditing, 'true');
-  assert.equal(strip(doc).querySelectorAll('[data-snc-tab-check]').length, 5);
+  assert.equal(strip(doc).querySelectorAll('[data-snc-tab-check]').length, 4, 'chat has no box');
   // the checkbox is a SIBLING, never a child: a nested input eats the click
   for (const box of strip(doc).querySelectorAll('[data-snc-tab-check]')) {
     assert.equal(box.querySelector('button'), null);
@@ -275,22 +275,56 @@ test('view tabs are untouched until edit mode, then each gets its own checkbox',
 test('unchecking a view tab hides it and is remembered', () => {
   const { doc, dom, dispose } = start(both());
   gear(doc).click();
-  const box = strip(doc).querySelectorAll('[data-snc-tab-check]')[2];
+  const box = strip(doc).querySelectorAll('[data-snc-tab-check]')[0];
+  assert.equal(box.parentElement.textContent.trim(), '上下页', 'box order skips chat');
   box.checked = false;
   box.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
-  assert.equal(tabByLabel(doc, '画廊').dataset.sncHidden, 'true');
-  assert.deepEqual(JSON.parse(dom.window.localStorage.getItem('dsh-sidebar-nav-collapse:views')), ['画廊']);
+  assert.equal(tabByLabel(doc, '上下页').dataset.sncHidden, 'true');
+  assert.deepEqual(JSON.parse(dom.window.localStorage.getItem('dsh-sidebar-nav-collapse:views')), ['上下页']);
   // still listed while editing so it can be brought back
-  assert.equal(tabByLabel(doc, '画廊').hasAttribute('data-snc-hidden'), true);
+  assert.equal(tabByLabel(doc, '上下页').hasAttribute('data-snc-hidden'), true);
   gear(doc).click();
-  assert.equal(tabByLabel(doc, '画廊').dataset.sncHidden, 'true', 'stays hidden after exit');
+  assert.equal(tabByLabel(doc, '上下页').dataset.sncHidden, 'true', 'stays hidden after exit');
   assert.match(cssOf(doc), /button\[role="tab"\]\[data-snc-hidden="true"\]\s*\{\s*display:\s*none/);
+});
+
+test('the chat view has no checkbox and can never be hidden', () => {
+  const { doc, dom, dispose } = start(both());
+  gear(doc).click();
+  const chat = tabByLabel(doc, '对话');
+  assert.equal(chat.parentElement.querySelector('[data-snc-tab-check]'), null, 'no box in front of chat');
+  // it still gets the uniform wrapper so the row stays aligned
+  assert.ok(chat.parentElement.classList.contains('snc-tabitem'));
+  // a stale store entry from an older build is reconciled away on paint
+  assert.equal(chat.hasAttribute('data-snc-hidden'), false);
+  const stored = dom.window.localStorage.getItem('dsh-sidebar-nav-collapse:views');
+  assert.ok(stored === null || !JSON.parse(stored).includes('对话'));
+  dispose();
+});
+
+test('a stored hidden chat entry is dropped on boot', async () => {
+  const dom = new JSDOM(`<!doctype html><html><head></head><body>${both(['对话', '上下页', '画廊'], 0)}</body></html>`, { url: 'http://localhost/' });
+  dom.window.localStorage.setItem('dsh-sidebar-nav-collapse:views', JSON.stringify(['对话', '画廊']));
+  let bundle;
+  const code = fs.readFileSync(path, 'utf8');
+  vm.runInNewContext(code, {
+    window: Object.assign(dom.window, { __ModuleLoader__: { load: (v) => { bundle = v; } } }),
+    document: dom.window.document,
+    MutationObserver: dom.window.MutationObserver,
+  });
+  const client = bundle.factory(() => { throw Error('unexpected dependency'); });
+  client.apply({ effect: (fn) => { fn(); } });
+  const doc = dom.window.document;
+  assert.equal(tabByLabel(doc, '对话').hasAttribute('data-snc-hidden'), false, 'chat is always visible');
+  assert.equal(tabByLabel(doc, '画廊').dataset.sncHidden, 'true', 'the rest still applies');
+  assert.deepEqual(JSON.parse(dom.window.localStorage.getItem('dsh-sidebar-nav-collapse:views')), ['画廊'], 'chat pruned from the store');
 });
 
 test('the active view cannot be hidden', () => {
   const { doc, dom, dispose } = start(both(['对话', '上下页', '画廊'], 2));
   gear(doc).click();
-  const box = strip(doc).querySelectorAll('[data-snc-tab-check]')[2];
+  const box = [...strip(doc).querySelectorAll('[data-snc-tab-check]')].find((b) => b.parentElement.textContent.trim() === '画廊');
+  assert.ok(box, 'the active non-chat view still has a box');
   assert.equal(box.checked, true);
   box.checked = false;
   box.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
@@ -325,7 +359,7 @@ test('tabs that mount after the plugin are picked up', async () => {
   doc.body.insertAdjacentHTML('beforeend', tabs());
   await flush();
   assert.equal(strip(doc).dataset.sncEditing, 'true');
-  assert.equal(strip(doc).querySelectorAll('[data-snc-tab-check]').length, 5, 'late strip is managed');
+  assert.equal(strip(doc).querySelectorAll('[data-snc-tab-check]').length, 4, 'late strip is managed');
   dispose();
   assert.equal(doc.querySelectorAll('.snc-tabitem').length, 0);
   assert.equal(doc.querySelectorAll('[data-snc-tab-check]').length, 0);
@@ -336,7 +370,7 @@ test('hiding a sidebar panel and a view tab are independent stores', () => {
   const { doc, dom, dispose } = start(both());
   gear(doc).click();
   assert.equal(doc.querySelectorAll('[data-snc-check]').length, 6);
-  assert.equal(doc.querySelectorAll('[data-snc-tab-check]').length, 5);
+  assert.equal(doc.querySelectorAll('[data-snc-tab-check]').length, 4);
   const panelBox = doc.querySelectorAll('[data-snc-check]')[0];
   panelBox.checked = false;
   panelBox.dispatchEvent(new dom.window.Event('change', { bubbles: true }));

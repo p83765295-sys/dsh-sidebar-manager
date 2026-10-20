@@ -130,21 +130,27 @@ await shot('v4-1-expanded.png');
 // 2. edit mode: both groups get checkboxes
 await click('.snc-gear');
 report.editing = await measure();
-// the box must share the label's centre line
+// the box must share the label's centre line (chat has no box: it is pinned)
 report.alignment = await tab.evaluate(() => {
   return [...document.querySelectorAll('.snc-tabitem')].map((item) => {
-    const box = item.querySelector('.snc-tabbox').getBoundingClientRect();
-    const label = item.querySelector('[role="tab"]').getBoundingClientRect();
+    const boxEl = item.querySelector('.snc-tabbox');
+    const labelEl = item.querySelector('[role="tab"]');
     const range = document.createRange();
-    range.selectNodeContents(item.querySelector('[role="tab"]'));
-    const text = range.getBoundingClientRect();
+    range.selectNodeContents(labelEl);
+    const textR = range.getBoundingClientRect();
+    const textCenterY = textR.top + textR.height / 2;
+    if (!boxEl) {
+      return { tab: item.textContent.trim(), pinned: true, textCenterY: +textCenterY.toFixed(1) };
+    }
+    const box = boxEl.getBoundingClientRect();
+    const boxCenterY = box.top + box.height / 2;
     return {
       tab: item.textContent.trim(),
-      boxCenterY: +(box.top + box.height / 2).toFixed(1),
-      textCenterY: +(text.top + text.height / 2).toFixed(1),
-      deltaY: +Math.abs((box.top + box.height / 2) - (text.top + text.height / 2)).toFixed(2),
+      pinned: false,
+      boxCenterY: +boxCenterY.toFixed(1),
+      textCenterY: +textCenterY.toFixed(1),
+      deltaY: +Math.abs(boxCenterY - textCenterY).toFixed(2),
       boxSize: `${Math.round(box.width)}x${Math.round(box.height)}`,
-      labelBoxTop: +label.top.toFixed(1),
     };
   });
 });
