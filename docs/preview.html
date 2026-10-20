@@ -149,15 +149,39 @@
     color: var(--dsw-alias-label-primary); border-bottom-color: #4d6bfe;
   }
 
-  .body { flex: 1 1 auto; display: flex; flex-direction: column; padding: 22px 26px 18px; overflow: hidden; }
-  .eyebrow { font-size: 11px; letter-spacing: .18em; color: var(--dsw-alias-label-tertiary); }
-  h1 { margin: 14px 0 0; font-size: 26px; font-weight: 650; letter-spacing: -.5px; }
-  .lede { margin: 14px 0 0; max-width: 470px; font-size: 14px; line-height: 1.8; color: var(--dsw-alias-label-secondary); }
-  .note { margin-top: 18px; font-size: 12px; color: var(--dsw-alias-label-tertiary); }
+  /* ---------------- narration ----------------
+     The caption column is what makes the animation readable: without it the
+     viewer sees things fold and unfold but never learns why. Each phase swaps
+     both lines, so the animation reads as a short explanation rather than a
+     silent loop. It is NOT part of the plugin -- the plugin only ever touches
+     the sidebar and the tab strip. */
+  .body {
+    flex: 1 1 auto; display: flex; flex-direction: column;
+    padding: 40px 44px 26px; overflow: hidden;
+  }
+  .eyebrow {
+    font-size: 11px; letter-spacing: .18em; color: var(--dsw-alias-label-tertiary);
+    min-height: 15px;
+  }
+  #headline {
+    margin: 16px 0 0; font-size: 27px; font-weight: 680; letter-spacing: -.6px;
+    line-height: 1.35; min-height: 74px;
+  }
+  .hairline {
+    width: 100%; max-width: 380px; height: 1px; margin: 4px 0 0;
+    background: linear-gradient(90deg, #0f11152e, transparent);
+  }
+  #details {
+    margin: 16px 0 0; max-width: 420px; font-size: 14px; line-height: 1.85;
+    color: var(--dsw-alias-label-secondary); min-height: 78px;
+  }
+  .footnote {
+    margin-top: auto; font-size: 11.5px; color: var(--dsw-alias-label-tertiary);
+  }
 
   /* the composer, so the window reads as a real session */
   .composer {
-    margin-top: auto; display: flex; align-items: center; gap: 10px;
+    display: flex; align-items: center; gap: 10px;
     min-height: 46px; padding: 0 14px;
     border: 1px solid var(--dsw-alias-border-l1); border-radius: 14px;
     background: #fff; color: var(--dsw-alias-label-tertiary); font-size: 13px;
@@ -165,6 +189,30 @@
   .send {
     margin-left: auto; width: 26px; height: 26px; border-radius: 8px;
     background: #0f1115; color: #fff; display: grid; place-items: center; font-size: 13px;
+  }
+
+  /* ---------------- scripted pointer ----------------
+     A recording of a click with no pointer in it is unreadable: the list folds
+     and nothing on screen explains who folded it. The sprite is decoration
+     driven by the timeline; it never dispatches events itself. */
+  #cursor {
+    position: fixed; left: 0; top: 0; z-index: 30; pointer-events: none;
+    width: 22px; height: 27px; opacity: 0;
+    filter: drop-shadow(0 2px 3px #00000066);
+    transform-origin: 3px 2px;
+  }
+  #cursor[data-visible="true"] { opacity: 1; }
+  #cursor[data-pressed="true"] { scale: .84; }
+  #cursor svg { display: block; width: 100%; height: 100%; }
+  /* the click ripple, so a press reads as a press and not as a jump */
+  #cursor::after {
+    content: ""; position: absolute; left: -9px; top: -9px; width: 22px; height: 22px;
+    border-radius: 50%; border: 2px solid #4d6bfe; opacity: 0;
+  }
+  #cursor[data-pressed="true"]::after { animation: ripple .34s ease-out; }
+  @keyframes ripple {
+    from { opacity: .85; scale: .5; }
+    to   { opacity: 0;   scale: 1.9; }
   }
 </style>
 
@@ -212,14 +260,18 @@
 
     <div class="body">
       <div class="eyebrow">DSH · SIDEBAR MANAGER</div>
-      <h1>示例会话</h1>
-      <p class="lede">
-        左侧扩展组可以折叠，也可以勾选隐藏、拖动排序；会话顶部的视图标签同样如此。
-      </p>
-      <div class="note">面板名称与工作区名称均为虚构数据，此页不包含任何真实会话或账号。</div>
-      <div class="composer">向 DeepSeek 提问…<span class="send">↑</span></div>
+      <h1 id="headline">收起，只留一行。</h1>
+      <div class="hairline"></div>
+      <p id="details">点「扩展」，整组入口收起来，下方直接是工作区。</p>
+      <div class="footnote">示意画面 · 运行真实插件 · 面板与项目名均为虚构数据</div>
     </div>
   </div>
+</div>
+
+<!-- scripted pointer; driven by the timeline, never dispatches events itself -->
+<div id="cursor" aria-hidden="true">
+  <svg viewBox="0 0 22 27"><path d="M2.5 1.5v19l4.9-4.7 3.6 8.4 4-1.9-3.6-8.3h6.3z"
+    fill="#fff" stroke="#11151b" stroke-width="1.4" stroke-linejoin="round"/></svg>
 </div>
 
 <script>
@@ -292,35 +344,80 @@ function pressPoint(el, depth) {
   return { x: box.left + 24, y: box.top + (depth === undefined ? 14 : depth) };
 }
 function midpoint(el) { const b = el.getBoundingClientRect(); return b.top + b.height / 2; }
+/* the checkbox belonging to a sidebar row / a view tab, by visible label */
+function check(name) {
+  return [...document.querySelectorAll('.snc-check')]
+    .find((b) => b.closest('.snc-entry')?.textContent.includes(name));
+}
+function tabCheck(name) {
+  return [...document.querySelectorAll('.snc-tabbox')]
+    .find((b) => b.closest('.snc-tabitem')?.textContent.includes(name));
+}
+
+/* ---- scripted pointer ----
+   Two separate things, deliberately:
+     * the sprite is decoration -- it is moved and pressed to match the input
+       the timeline fabricates, so a viewer can see WHERE each gesture lands;
+     * pointer() dispatches the real event into the plugin.
+   The sprite never dispatches anything; if it did, the animation would stop
+   being a recording of the plugin and become a puppet show of it. */
+const sprite = document.getElementById('cursor');
+const MOVE_GAP = 0.16;   /* seconds the sprite takes to travel between targets */
+
+/* positions the sprite at an element (or a point) without animating */
+function placeSprite(x, y) {
+  sprite.dataset.visible = 'true';
+  sprite.style.transform = `translate(${x - 3}px, ${y - 2}px)`;
+}
+/* a click lands: press, ripple, release */
+function pressSprite() {
+  sprite.dataset.pressed = 'true';
+  setTimeout(() => { sprite.dataset.pressed = 'false'; }, 190);
+}
+function elementPoint(el, dx, dy) {
+  const b = el.getBoundingClientRect();
+  return { x: b.left + (dx === undefined ? b.width / 2 : dx), y: b.top + (dy === undefined ? b.height / 2 : dy) };
+}
 
 const timeline = [
-  /* ---- 0.0s: folded ---- */
-  { at: 0.0, run: () => { if (!shell().dataset.sncFolded.includes('true')) group().click(); } },
+  /* ---- 0.0s: folded, sprite rests over the group row ---- */
+  { at: 0.0, run: () => {
+      if (!shell().dataset.sncFolded.includes('true')) group().click();
+      const p = elementPoint(group(), 30, 12);
+      placeSprite(p.x, p.y);
+    } },
   { hold: 0.9 },
 
+  /* ---- 0.55s: the sprite travels to the group row, then presses it ---- */
+  { at: 0.55, run: () => { const p = elementPoint(group(), 30, 12); placeSprite(p.x, p.y); } },
+  { at: 0.82, run: () => pressSprite() },
   /* ---- 0.9s: unfold ---- */
   { at: 0.9, run: () => { if (shell().dataset.sncFolded === 'true') group().click(); } },
   { hold: 0.7 },
 
   /* ---- 1.6s: open settings (edit mode); the plugin unfolds first ---- */
+  { at: 1.25, run: () => { const p = elementPoint(gear(), 10, 10); placeSprite(p.x, p.y); } },
+  { at: 1.52, run: () => pressSprite() },
   { at: 1.6, run: () => gear().click() },
   { hold: 1.2 },
 
-  /* ---- 2.8s: hide two extensions ---- */
-  { at: 2.8, run: () => {
-      const box = [...document.querySelectorAll('.snc-check')];
-      const target = box.find((b) => b.closest('.snc-entry').textContent.includes('示例面板 A'));
-      if (target && target.checked) target.click();
-    } },
+  /* ---- 2.8s / 3.3s: hide two extensions, sprite on each checkbox ---- */
+  { at: 2.45, run: () => { placeSprite(...(() => { const p = elementPoint(check('示例面板 A'), 6, 8); return [p.x, p.y]; })()); } },
+  { at: 2.72, run: () => pressSprite() },
+  { at: 2.8, run: () => { const box = check('示例面板 A'); if (box && box.checked) box.click(); } },
   { hold: 0.5 },
-  { at: 3.3, run: () => {
-      const box = [...document.querySelectorAll('.snc-check')];
-      const target = box.find((b) => b.closest('.snc-entry').textContent.includes('上下文洞察'));
-      if (target && target.checked) target.click();
-    } },
+  { at: 3.05, run: () => { const p = elementPoint(check('上下文洞察'), 6, 8); placeSprite(p.x, p.y); } },
+  { at: 3.22, run: () => pressSprite() },
+  { at: 3.3, run: () => { const box = check('上下文洞察'); if (box && box.checked) box.click(); } },
   { hold: 0.8 },
 
   /* ---- 4.1s: drag 记忆系统 above 插件 (sidebar, vertical axis) ---- */
+  { at: 3.75, run: () => {
+      const from = rows().find((r) => r.getAttribute('aria-label') === '记忆系统');
+      const p = pressPoint(from);
+      placeSprite(p.x, p.y);
+    } },
+  { at: 4.02, run: () => pressSprite() },
   { at: 4.1, run: () => {
       const from = rows().find((r) => r.getAttribute('aria-label') === '记忆系统');
       const handle = from.closest('.snc-entry').querySelector('.snc-drag');
@@ -332,40 +429,46 @@ const timeline = [
       const { p, from } = window.__drag;
       pointer(document, 'pointermove', p.x, p.y - 4);
       pointer(document, 'pointermove', p.x, p.y - 14);
+      placeSprite(p.x, p.y - 14);
     } },
   /* two steps so the lift threshold is crossed before any target test */
   { at: 4.5, run: () => {
       const { p } = window.__drag;
       const first = rows()[0];
       pointer(document, 'pointermove', p.x, midpoint(first) - 8);
+      placeSprite(p.x, midpoint(first) - 8);
     } },
   { at: 4.9, run: () => {
       const { p } = window.__drag;
       const first = rows()[0];
       pointer(document, 'pointermove', p.x, midpoint(first) - 12);
+      placeSprite(p.x, midpoint(first) - 12);
     } },
   { at: 5.2, run: () => {
       const { p } = window.__drag;
       pointer(document, 'pointerup', p.x, p.y - 60);
+      placeSprite(p.x, p.y - 60);
       delete window.__drag;
     } },
   { hold: 0.9 },
 
-  /* ---- 6.1s: hide two view tabs (horizontal axis) ---- */
-  { at: 6.1, run: () => {
-      const box = [...document.querySelectorAll('.snc-tabbox')];
-      const target = box.find((b) => b.closest('.snc-tabitem').textContent.includes('编队'));
-      if (target && target.checked) target.click();
-    } },
+  /* ---- 6.1s / 6.6s: hide two view tabs, sprite on each tab checkbox ---- */
+  { at: 5.75, run: () => { const p = elementPoint(tabCheck('编队'), 6, 8); placeSprite(p.x, p.y); } },
+  { at: 6.02, run: () => pressSprite() },
+  { at: 6.1, run: () => { const box = tabCheck('编队'); if (box && box.checked) box.click(); } },
   { hold: 0.5 },
-  { at: 6.6, run: () => {
-      const box = [...document.querySelectorAll('.snc-tabbox')];
-      const target = box.find((b) => b.closest('.snc-tabitem').textContent.includes('画廊'));
-      if (target && target.checked) target.click();
-    } },
+  { at: 6.35, run: () => { const p = elementPoint(tabCheck('画廊'), 6, 8); placeSprite(p.x, p.y); } },
+  { at: 6.52, run: () => pressSprite() },
+  { at: 6.6, run: () => { const box = tabCheck('画廊'); if (box && box.checked) box.click(); } },
   { hold: 0.9 },
 
   /* ---- 7.5s: drag 记忆系统 tab to the front ---- */
+  { at: 7.15, run: () => {
+      const from = tabs().find((t) => t.textContent.trim() === '记忆系统');
+      const b = from.getBoundingClientRect();
+      placeSprite(b.left + b.width / 2, b.top + b.height / 2);
+    } },
+  { at: 7.42, run: () => pressSprite() },
   { at: 7.5, run: () => {
       const from = tabs().find((t) => t.textContent.trim() === '记忆系统');
       const handle = from.closest('.snc-tabitem').querySelector('.snc-drag');
@@ -378,6 +481,7 @@ const timeline = [
       const { p } = window.__drag;
       pointer(document, 'pointermove', p.x + 4, p.y);
       pointer(document, 'pointermove', p.x + 14, p.y);
+      placeSprite(p.x + 14, p.y);
     } },
   { at: 7.9, run: () => {
       const { p, from } = window.__drag;
@@ -385,6 +489,7 @@ const timeline = [
       if (score) {
         const b = score.getBoundingClientRect();
         pointer(document, 'pointermove', b.left + 10, p.y);
+        placeSprite(b.left + 10, p.y);
       } else {
         pointer(document, 'pointermove', p.x - 100, p.y);
       }
@@ -394,27 +499,55 @@ const timeline = [
       const first = document.querySelector('.snc-tabitem');
       const b = first.getBoundingClientRect();
       pointer(document, 'pointermove', b.left + 6, p.y);
+      placeSprite(b.left + 6, p.y);
     } },
   { at: 8.6, run: () => {
       const { p } = window.__drag;
       pointer(document, 'pointerup', p.x - 150, p.y);
+      placeSprite(p.x - 150, p.y);
       delete window.__drag;
     } },
   { hold: 0.8 },
 
   /* ---- 9.4s: leave edit mode ---- */
+  { at: 9.15, run: () => { const p = elementPoint(gear(), 10, 10); placeSprite(p.x, p.y); } },
+  { at: 9.32, run: () => pressSprite() },
   { at: 9.4, run: () => gear().click() },
   { hold: 0.8 },
 
   /* ---- 10.2s: fold again, to end where it began ---- */
+  { at: 9.95, run: () => { const p = elementPoint(group(), 30, 12); placeSprite(p.x, p.y); } },
+  { at: 10.12, run: () => pressSprite() },
   { at: 10.2, run: () => { if (shell().dataset.sncFolded === 'false') group().click(); } },
   { hold: 0.8 },
 ];
+
+/* ---- narration ----
+   Five phases, each a headline and one supporting line. The captions are the
+   only part of this page a viewer reads rather than watches, so they are kept
+   to what the picture cannot say by itself: which control was pressed, and
+   what the state means afterwards. They share the phase boundaries of the
+   timeline, so the words always describe the frame on screen. */
+const NARRATION = [
+  { from: 0.0,  title: '收起，只留一行。',            text: '点「扩展」，整组入口收起来，下方直接是工作区。' },
+  { from: 0.9,  title: '再点一次，就回来了。',        text: '折叠状态会记住，下次打开还是这个样子。' },
+  { from: 1.6,  title: '点齿轮，逐个决定。',          text: '每行前面出现勾选框，取消勾选即隐藏；灰掉的是已隐藏的。' },
+  { from: 4.1,  title: '拖一下，放到顺手的位置。',    text: '拖动时其余行实时让位，松手即保存，下次还是这个顺序。' },
+  { from: 9.4,  title: '再点一次，编辑结束。',        text: '齿轮变成对勾表示正在编辑中，退出后勾选框和手柄一起消失。' },
+];
+function narrationAt(t) {
+  let current = NARRATION[0];
+  for (const item of NARRATION) if (t >= item.from) current = item;
+  return current;
+}
 
 window.demoFrame = (t) => {
   for (const step of timeline) {
     if (step.run && t >= step.at && !step.done) { step.done = true; step.run(); }
   }
+  const narration = narrationAt(t);
+  document.getElementById('headline').textContent = narration.title;
+  document.getElementById('details').textContent = narration.text;
   return {
     collapsed: shell()?.dataset.sncFolded ?? 'null',
     editing: shell()?.dataset.sncEditing ?? 'null',
