@@ -91,6 +91,26 @@ test('the group row is the toggle: starts expanded and folds the list', () => {
   assert.equal(shell.dataset.sncFolded, 'false');
   assert.equal(String(stateOf(dom.window).folded), 'false');
   dispose();
+
+test('the group row is a vine divider, not a text entry', () => {
+  const { doc } = start(both());
+  const row = group(doc);
+  /* the row must not read as a seventh extension: no visible text content at
+     all, and no .snc-title / .snc-glyph left from the labelled version */
+  assert.equal(row.textContent.trim(), '', 'the divider carries no visible text');
+  assert.equal(row.querySelector('.snc-title'), null);
+  assert.equal(row.querySelector('.snc-glyph'), null);
+  /* the name survives where it still has to be reachable */
+  assert.equal(row.getAttribute('aria-label'), '收起扩展管理');
+  assert.equal(row.title, '收起扩展管理（点击切换）');
+  /* and the decoration is a real inline path, not a background image */
+  const vine = row.querySelector('.snc-vine');
+  assert.ok(vine, 'the vine element exists');
+  assert.ok(vine.querySelector('path.snc-vine-line')?.getAttribute('d'), 'the vine is a path');
+  assert.equal(vine.querySelectorAll('.snc-leaf').length, 3, 'three leaves hang off the vine');
+  assert.equal(row.querySelectorAll('.snc-vine-chevron').length, 1, 'one chevron still advertises the fold');
+  dispose();
+});
 });
 
 test('the group row is keyboard operable', () => {
