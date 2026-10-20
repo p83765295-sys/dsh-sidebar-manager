@@ -1,0 +1,434 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>dsh-sidebar-manager · 匿名示意</title>
+<!--
+  Anonymous preview page.
+
+  The shell below imitates a DeepSeek Harness window, but the behaviour in it is
+  the REAL plugin: lib/client.js is injected verbatim at the bottom of this file
+  and its apply() runs against this DOM. Nothing here re-implements folding,
+  hiding or dragging; if the plugin breaks, this page breaks.
+
+  Only two things are fake:
+
+    window.__ModuleLoader__   the host's tiny module registry, reduced to its
+                             one relevant method: load({ id, factory }).
+    ctx                      the host lifecycle context. The plugin touches a
+                             single member, ctx.effect(fn, label), which runs
+                             fn now and returns a disposer.
+
+  Every panel name is invented. No real session, account or workspace name
+  appears anywhere, which is the reason this page exists instead of a
+  screenshot of the actual app.
+
+  The host contract the plugin keys off, and that this page therefore has to
+  reproduce exactly:
+
+    nav[class*="panelList"][aria-label="全局面板"]
+      > button[class*="panelRow"][aria-label="<name>"]   the rows
+    div[data-conversation-tabs]
+      > button[role="tab"][aria-selected]                the view tabs
+-->
+<style>
+  /* ---- host shell, not part of the plugin ----
+     Colours and metrics mirror the native sidebar so the plugin's own token
+     lookups resolve to something plausible. */
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    background: #eef1f5;
+    color: #0f1115;
+    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+          "Microsoft YaHei", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  /* the theme tokens the plugin reads; values are the light-theme defaults */
+  :root {
+    --dsw-alias-bg-base: #ffffff;
+    --dsw-alias-label-primary: #0f1115;
+    --dsw-alias-label-secondary: #61666b;
+    --dsw-alias-label-tertiary: #81858c;
+    --dsw-alias-border-l1: #0000001a;
+    --dsw-specific-sidebar-fill: #f9fafb;
+    --dsw-radius-md: 12px;
+    --dsw-radius-sm: 8px;
+  }
+
+  .app { display: flex; height: 640px; width: 1024px; margin: 0; background: #fff; }
+
+  /* ---------------- sidebar ---------------- */
+  .side {
+    width: 268px; flex: none;
+    display: flex; flex-direction: column;
+    padding: 14px 10px 10px;
+    background: var(--dsw-specific-sidebar-fill);
+    border-right: 1px solid var(--dsw-alias-border-l1);
+  }
+  .brand { display: flex; align-items: center; gap: 8px; padding: 0 8px 14px; }
+  .brand b { font-size: 15px; font-weight: 650; letter-spacing: -.2px; }
+  .brand span {
+    font-size: 9px; letter-spacing: .09em; color: var(--dsw-alias-label-tertiary);
+    border: 1px solid var(--dsw-alias-border-l1); border-radius: 4px; padding: 1px 4px;
+  }
+  .newchat {
+    display: flex; align-items: center; justify-content: center; gap: 7px;
+    height: 34px; margin: 0 2px 12px;
+    border: 1px solid var(--dsw-alias-border-l1); border-radius: var(--dsw-radius-sm);
+    background: #fff; color: var(--dsw-alias-label-primary);
+    font-size: 13px; font-weight: 500; cursor: pointer;
+  }
+  .newchat:hover { background: #2631480a; }
+
+  /* the exact shape the plugin looks for: class contains "panelList" and the
+     aria-label is the host's own name for the group */
+  nav.panelList_x9 {
+    display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px;
+  }
+  button.panelRow_x9 {
+    display: flex; align-items: center; gap: 8px;
+    min-height: 36px; padding: 7px 8px; margin: 0 2px;
+    border: 0; border-radius: var(--dsw-radius-md);
+    background: transparent; color: var(--dsw-alias-label-primary);
+    font: inherit; font-size: 14px; line-height: 22px; font-weight: 500;
+    text-align: left; cursor: pointer;
+  }
+  button.panelRow_x9:hover { background: #2631480f; }
+  .glyph { width: 20px; flex: none; text-align: center; font-size: 15px; color: var(--dsw-alias-label-secondary); }
+  .label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  .work { margin-top: 4px; padding-top: 10px; border-top: 1px solid var(--dsw-alias-border-l1); }
+  .work h4 {
+    margin: 0; padding: 4px 8px 6px; font-size: 11px; font-weight: 600;
+    letter-spacing: .06em; color: var(--dsw-alias-label-tertiary);
+  }
+  .work div {
+    display: flex; align-items: center; gap: 8px; min-height: 32px;
+    padding: 5px 8px; border-radius: var(--dsw-radius-md);
+    font-size: 13px; color: var(--dsw-alias-label-secondary);
+  }
+  .work div:hover { background: #2631480f; }
+  .grow { flex: 1 1 auto; }
+  .foot {
+    display: flex; align-items: center; gap: 8px; padding: 8px;
+    border-top: 1px solid var(--dsw-alias-border-l1);
+    font-size: 12px; color: var(--dsw-alias-label-tertiary);
+  }
+  .avatar { width: 22px; height: 22px; border-radius: 50%; background: #cfd6e0; flex: none; }
+
+  /* ---------------- main column ---------------- */
+  .main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+
+  /* the host header is a grid and holds the view tabs on its own row */
+  .head {
+    display: grid; grid-template-columns: 1fr auto; align-items: center;
+    gap: 0 12px; padding: 14px 20px 0;
+    border-bottom: 1px solid var(--dsw-alias-border-l1);
+  }
+  .title { font-size: 14px; font-weight: 600; padding-bottom: 10px; }
+  .tools { display: flex; align-items: center; gap: 6px; padding-bottom: 10px; }
+  .chip {
+    padding: 3px 9px; border: 1px solid var(--dsw-alias-border-l1);
+    border-radius: 999px; font-size: 11px; color: var(--dsw-alias-label-secondary);
+    background: #fff;
+  }
+  /* the second contract: this attribute is how the plugin finds the strip */
+  .tabs_x9 {
+    grid-column: 1 / -1; display: flex; gap: 36px;
+    margin-top: 10px; padding-left: 8px; position: relative;
+  }
+  .tabs_x9 button[role="tab"] {
+    padding: 0 0 9px; border: 0; background: none; cursor: pointer;
+    font: inherit; font-size: 13px; font-weight: 500; line-height: 16px;
+    color: var(--dsw-alias-label-secondary);
+    border-bottom: 2px solid transparent; margin-bottom: -1px;
+  }
+  .tabs_x9 button[role="tab"][aria-selected="true"] {
+    color: var(--dsw-alias-label-primary); border-bottom-color: #4d6bfe;
+  }
+
+  .body { flex: 1 1 auto; display: flex; flex-direction: column; padding: 22px 26px 18px; overflow: hidden; }
+  .eyebrow { font-size: 11px; letter-spacing: .18em; color: var(--dsw-alias-label-tertiary); }
+  h1 { margin: 14px 0 0; font-size: 26px; font-weight: 650; letter-spacing: -.5px; }
+  .lede { margin: 14px 0 0; max-width: 470px; font-size: 14px; line-height: 1.8; color: var(--dsw-alias-label-secondary); }
+  .note { margin-top: 18px; font-size: 12px; color: var(--dsw-alias-label-tertiary); }
+
+  /* the composer, so the window reads as a real session */
+  .composer {
+    margin-top: auto; display: flex; align-items: center; gap: 10px;
+    min-height: 46px; padding: 0 14px;
+    border: 1px solid var(--dsw-alias-border-l1); border-radius: 14px;
+    background: #fff; color: var(--dsw-alias-label-tertiary); font-size: 13px;
+  }
+  .send {
+    margin-left: auto; width: 26px; height: 26px; border-radius: 8px;
+    background: #0f1115; color: #fff; display: grid; place-items: center; font-size: 13px;
+  }
+</style>
+
+<div class="app">
+  <aside class="side">
+    <div class="brand"><b>deepseek</b><span>HARNESS</span></div>
+    <div class="newchat">＋ 新会话</div>
+
+    <!-- 全局面板 -->
+    <nav class="panelList_x9" aria-label="全局面板">
+      <button class="panelRow_x9" aria-label="插件"><span class="glyph">✧</span><span class="label">插件</span></button>
+      <button class="panelRow_x9" aria-label="扩展管理"><span class="glyph">▦</span><span class="label">扩展管理</span></button>
+      <button class="panelRow_x9" aria-label="上下文洞察"><span class="glyph">◎</span><span class="label">上下文洞察</span></button>
+      <button class="panelRow_x9" aria-label="任务看板"><span class="glyph">▣</span><span class="label">任务看板</span></button>
+      <button class="panelRow_x9" aria-label="自动化任务"><span class="glyph">◷</span><span class="label">自动化任务</span></button>
+      <button class="panelRow_x9" aria-label="记忆系统"><span class="glyph">✿</span><span class="label">记忆系统</span></button>
+      <button class="panelRow_x9" aria-label="示例面板 A"><span class="glyph">◈</span><span class="label">示例面板 A</span></button>
+      <button class="panelRow_x9" aria-label="示例面板 B"><span class="glyph">✦</span><span class="label">示例面板 B</span></button>
+    </nav>
+
+    <div class="work">
+      <h4>工作区</h4>
+      <div>▱ 示例项目 A</div>
+      <div>▱ 示例项目 B</div>
+    </div>
+
+    <div class="grow"></div>
+    <div class="foot"><span class="avatar"></span>示例用户</div>
+  </aside>
+
+  <div class="main">
+    <div class="head">
+      <div class="title">示例会话</div>
+      <div class="tools"><span class="chip">智能体团队</span><span class="chip">标准模式</span></div>
+
+      <!-- 会话视图标签 -->
+      <div class="tabs_x9" data-conversation-tabs role="tablist">
+        <button role="tab" aria-selected="true">对话</button>
+        <button role="tab" aria-selected="false">上下页</button>
+        <button role="tab" aria-selected="false">画廊</button>
+        <button role="tab" aria-selected="false">编队</button>
+        <button role="tab" aria-selected="false">记忆系统</button>
+      </div>
+    </div>
+
+    <div class="body">
+      <div class="eyebrow">DSH · SIDEBAR MANAGER</div>
+      <h1>示例会话</h1>
+      <p class="lede">
+        左侧扩展组可以折叠，也可以勾选隐藏、拖动排序；会话顶部的视图标签同样如此。
+      </p>
+      <div class="note">面板名称与工作区名称均为虚构数据，此页不包含任何真实会话或账号。</div>
+      <div class="composer">向 DeepSeek 提问…<span class="send">↑</span></div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ---- host module registry, reduced to what the plugin calls ----
+   The real one also handles modules, versions and hot reload; the plugin only
+   ever calls load() with an id and a factory. */
+window.__ModuleLoader__ = {
+  load({ id, factory }) {
+    const api = factory();
+    window.__modules = window.__modules || {};
+    window.__modules[id] = api;
+    return api;
+  },
+};
+
+/* ---- host context, reduced to ctx.effect ----
+   effect() runs the body immediately and keeps whatever it returns as the
+   disposer, which is how the plugin tears itself down. */
+const context = {
+  effect(body) {
+    const dispose = body();
+    context.disposers.push(dispose);
+    return dispose;
+  },
+  disposers: [],
+};
+
+/* the plugin injects itself into window.__ModuleLoader__ when it is evaluated */
+</script>
+<script src="../lib/client.js"></script>
+<script>
+/* boot: run the plugin the same way the host would */
+window.__modules['dsh-sidebar-manager'].apply(context);
+
+/* ---- scripted demo clock, driven by docs/render-demo.mjs ----
+   Each call seeks the recorded animation to time t (seconds) and returns the
+   state the recorder asserts on. Keeping the whole timeline in one seekable
+   function is what makes the capture deterministic: the recorder can ask for
+   frame 120 twice and get byte-identical output. */
+function api(selector) { return document.querySelector(selector); }
+function rows() { return [...document.querySelectorAll('nav.panelList_x9 button.panelRow_x9')]; }
+function tabs() { return [...document.querySelectorAll('.tabs_x9 button[role="tab"]')]; }
+function shell() { return api('.snc-shell'); }
+function gear() { return api('.snc-bud'); }
+function group() { return api('.snc-group'); }
+function visibleRows() {
+  return rows().filter((r) => r.offsetParent !== null && !r.hasAttribute('data-snc-hidden'));
+}
+function visibleTabs() {
+  return tabs().filter((t) => t.offsetParent !== null && !t.hasAttribute('data-snc-hidden'));
+}
+function pointer(el, type, x, y) {
+  /* the plugin listens on document, so a document-level move has no box of its
+     own; only take the element centre when the target actually has geometry */
+  const hasBox = el && typeof el.getBoundingClientRect === 'function';
+  const box = hasBox ? el.getBoundingClientRect() : { left: 0, top: 0, width: 0, height: 0 };
+  const cx = x === undefined ? box.left + box.width / 2 : x;
+  const cy = y === undefined ? box.top + box.height / 2 : y;
+  const event = new PointerEvent(type, {
+    bubbles: true, cancelable: true, composed: true,
+    clientX: cx, clientY: cy, pointerId: 1, pointerType: 'mouse',
+    button: 0, buttons: type === 'pointerup' ? 0 : 1,
+  });
+  el.dispatchEvent(event);
+}
+/* how far the drag cue should set the captured pointer below the row top; the
+   plugin wants the press point, not an approximation, or the row jumps */
+function pressPoint(el, depth) {
+  const box = el.getBoundingClientRect();
+  return { x: box.left + 24, y: box.top + (depth === undefined ? 14 : depth) };
+}
+function midpoint(el) { const b = el.getBoundingClientRect(); return b.top + b.height / 2; }
+
+const timeline = [
+  /* ---- 0.0s: folded ---- */
+  { at: 0.0, run: () => { if (!shell().dataset.sncFolded.includes('true')) group().click(); } },
+  { hold: 0.9 },
+
+  /* ---- 0.9s: unfold ---- */
+  { at: 0.9, run: () => { if (shell().dataset.sncFolded === 'true') group().click(); } },
+  { hold: 0.7 },
+
+  /* ---- 1.6s: open settings (edit mode); the plugin unfolds first ---- */
+  { at: 1.6, run: () => gear().click() },
+  { hold: 1.2 },
+
+  /* ---- 2.8s: hide two extensions ---- */
+  { at: 2.8, run: () => {
+      const box = [...document.querySelectorAll('.snc-check')];
+      const target = box.find((b) => b.closest('.snc-entry').textContent.includes('示例面板 A'));
+      if (target && target.checked) target.click();
+    } },
+  { hold: 0.5 },
+  { at: 3.3, run: () => {
+      const box = [...document.querySelectorAll('.snc-check')];
+      const target = box.find((b) => b.closest('.snc-entry').textContent.includes('上下文洞察'));
+      if (target && target.checked) target.click();
+    } },
+  { hold: 0.8 },
+
+  /* ---- 4.1s: drag 记忆系统 above 插件 (sidebar, vertical axis) ---- */
+  { at: 4.1, run: () => {
+      const from = rows().find((r) => r.getAttribute('aria-label') === '记忆系统');
+      const handle = from.closest('.snc-entry').querySelector('.snc-drag');
+      const p = pressPoint(from);
+      pointer(handle, 'pointerdown', p.x, p.y);
+      window.__drag = { p, from };
+    } },
+  { at: 4.15, run: () => {
+      const { p, from } = window.__drag;
+      pointer(document, 'pointermove', p.x, p.y - 4);
+      pointer(document, 'pointermove', p.x, p.y - 14);
+    } },
+  /* two steps so the lift threshold is crossed before any target test */
+  { at: 4.5, run: () => {
+      const { p } = window.__drag;
+      const first = rows()[0];
+      pointer(document, 'pointermove', p.x, midpoint(first) - 8);
+    } },
+  { at: 4.9, run: () => {
+      const { p } = window.__drag;
+      const first = rows()[0];
+      pointer(document, 'pointermove', p.x, midpoint(first) - 12);
+    } },
+  { at: 5.2, run: () => {
+      const { p } = window.__drag;
+      pointer(document, 'pointerup', p.x, p.y - 60);
+      delete window.__drag;
+    } },
+  { hold: 0.9 },
+
+  /* ---- 6.1s: hide two view tabs (horizontal axis) ---- */
+  { at: 6.1, run: () => {
+      const box = [...document.querySelectorAll('.snc-tabbox')];
+      const target = box.find((b) => b.closest('.snc-tabitem').textContent.includes('编队'));
+      if (target && target.checked) target.click();
+    } },
+  { hold: 0.5 },
+  { at: 6.6, run: () => {
+      const box = [...document.querySelectorAll('.snc-tabbox')];
+      const target = box.find((b) => b.closest('.snc-tabitem').textContent.includes('画廊'));
+      if (target && target.checked) target.click();
+    } },
+  { hold: 0.9 },
+
+  /* ---- 7.5s: drag 记忆系统 tab to the front ---- */
+  { at: 7.5, run: () => {
+      const from = tabs().find((t) => t.textContent.trim() === '记忆系统');
+      const handle = from.closest('.snc-tabitem').querySelector('.snc-drag');
+      const b = from.getBoundingClientRect();
+      const p = { x: b.left + b.width / 2, y: b.top + b.height / 2 };
+      pointer(handle, 'pointerdown', p.x, p.y);
+      window.__drag = { p, from };
+    } },
+  { at: 7.55, run: () => {
+      const { p } = window.__drag;
+      pointer(document, 'pointermove', p.x + 4, p.y);
+      pointer(document, 'pointermove', p.x + 14, p.y);
+    } },
+  { at: 7.9, run: () => {
+      const { p, from } = window.__drag;
+      const score = [...document.querySelectorAll('.snc-tabitem')].find((i) => i.textContent.includes('编队'));
+      if (score) {
+        const b = score.getBoundingClientRect();
+        pointer(document, 'pointermove', b.left + 10, p.y);
+      } else {
+        pointer(document, 'pointermove', p.x - 100, p.y);
+      }
+    } },
+  { at: 8.3, run: () => {
+      const { p } = window.__drag;
+      const first = document.querySelector('.snc-tabitem');
+      const b = first.getBoundingClientRect();
+      pointer(document, 'pointermove', b.left + 6, p.y);
+    } },
+  { at: 8.6, run: () => {
+      const { p } = window.__drag;
+      pointer(document, 'pointerup', p.x - 150, p.y);
+      delete window.__drag;
+    } },
+  { hold: 0.8 },
+
+  /* ---- 9.4s: leave edit mode ---- */
+  { at: 9.4, run: () => gear().click() },
+  { hold: 0.8 },
+
+  /* ---- 10.2s: fold again, to end where it began ---- */
+  { at: 10.2, run: () => { if (shell().dataset.sncFolded === 'false') group().click(); } },
+  { hold: 0.8 },
+];
+
+window.demoFrame = (t) => {
+  for (const step of timeline) {
+    if (step.run && t >= step.at && !step.done) { step.done = true; step.run(); }
+  }
+  return {
+    collapsed: shell()?.dataset.sncFolded ?? 'null',
+    editing: shell()?.dataset.sncEditing ?? 'null',
+    first: visibleRows()[0]?.getAttribute('aria-label') ?? '',
+    rows: visibleRows().map((r) => r.getAttribute('aria-label')).join('|'),
+    firstTab: visibleTabs()[0]?.textContent.trim() ?? '',
+    tabs: visibleTabs().map((t) => t.textContent.trim()).join('|'),
+  };
+};
+
+/* reset for repeated inspection in a live browser */
+window.demoReset = () => {
+  for (const step of timeline) delete step.done;
+  try { window.localStorage.clear(); } catch {}
+};
+window.__ready = true;
+</script>
