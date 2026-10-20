@@ -621,7 +621,7 @@ test('a drag does not select the panel it was started on', () => {
   dispose();
 });
 
-test('apply saves the dragged order and a reboot restores it', () => {
+test('the gear toggles the session: pressing it again saves the dragged order', () => {
   const { doc, dom, dispose } = start(both());
   gear(doc).click();
   const unitsA = stubUnits(dom.window, [...doc.querySelectorAll("nav > .snc-entry")]);
@@ -631,14 +631,14 @@ test('apply saves the dragged order and a reboot restores it', () => {
      58, so y=70 is its trailing half → "插件" lands just after "自动化任务" */
   pointer(dom.window, 'pointermove', dom.window.document.body, 10, 70);
   pointer(dom.window, 'pointerup', dom.window.document.body, 10, 70);
-  /* nothing is written until apply */
+  /* nothing is written until the session is closed */
   assert.deepEqual(stateOf(dom.window).order, [], 'a drag alone never touches the store');
   assert.deepEqual(orderOf(doc), ['自动化任务', '插件', '上下文洞察', '扩展管理', '任务看板', '记忆系统']);
 
-  doc.querySelector('.snc-apply').click();
+  gear(doc).click();
   const record = stateOf(dom.window);
   assert.deepEqual(record.order, ['自动化任务', '插件', '上下文洞察', '扩展管理', '任务看板', '记忆系统']);
-  assert.equal(shadow(doc).dataset.sncEditing, 'false', 'apply leaves edit mode');
+  assert.equal(shadow(doc).dataset.sncEditing, 'false', 'the same button leaves edit mode');
   dispose();
 
   /* a fresh boot on the SAME storage must come back in the saved order */
@@ -647,7 +647,7 @@ test('apply saves the dragged order and a reboot restores it', () => {
   again.dispose();
 });
 
-test('cancel throws the draft away and keeps the saved order', () => {
+test('Escape throws the draft away and keeps the saved order', () => {
   const saved = { v: 2, folded: false, hidden: [], views: [], order: ['记忆系统', '插件', '自动化任务', '上下文洞察', '扩展管理', '任务看板'], orderViews: [] };
   const { doc, dom, dispose } = start(both(), saved);
   /* the saved order is already in effect outside edit mode */
@@ -663,9 +663,10 @@ test('cancel throws the draft away and keeps the saved order', () => {
   pointer(dom.window, 'pointerup', dom.window.document.body, 10, 230);
   assert.deepEqual(orderOf(doc), ['插件', '自动化任务', '上下文洞察', '扩展管理', '任务看板', '记忆系统'], 'the drag did move things');
 
-  doc.querySelector('.snc-cancel').click();
+  dom.window.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
   assert.deepEqual(stateOf(dom.window).order, saved.order, 'the store is untouched');
   assert.deepEqual(orderOf(doc), saved.order, 'the DOM reverts to the saved order');
+  assert.equal(shadow(doc).dataset.sncEditing, 'false', 'Escape also leaves edit mode');
   dispose();
 });
 
@@ -706,7 +707,7 @@ test('view tabs reorder on the horizontal axis and persist', () => {
   pointer(dom.window, 'pointerup', dom.window.document.body, 250, 10);
   assert.deepEqual(labels(), ['上下页', '画廊', '对话', '编队', '记忆系统']);
 
-  doc.querySelector('.snc-apply').click();
+  gear(doc).click();
   assert.deepEqual(stateOf(dom.window).orderViews, ['上下页', '画廊', '对话', '编队', '记忆系统']);
   dispose();
 });
@@ -747,13 +748,19 @@ test('the gear shows a pending-change dot and apply clears it', () => {
   dispose();
 });
 
-test('the action bar is only reachable while editing', () => {
+test('the gear is the only button: no apply/cancel bar exists', () => {
   const { doc, dispose } = start(both());
   const css = cssOf(doc);
-  assert.match(css, /\.snc-actions\s*\{\s*display:\s*none/);
-  assert.match(css, /\[data-snc-editing="true"\]\s*\.snc-actions\s*\{\s*display:\s*flex/);
+  /* the session is a two-state toggle on the gear, so a whole action row would
+     duplicate it. Absence is asserted on both the stylesheet and the DOM: a
+     leftover rule with no nodes would still be dead weight to maintain. */
+  assert.doesNotMatch(css, /\.snc-actions/);
+  assert.doesNotMatch(css, /\.snc-(apply|cancel)\b/);
+  assert.equal(doc.querySelector('.snc-actions'), null);
   gear(doc).click();
-  assert.ok(doc.querySelector('.snc-apply').textContent.includes('应用'));
-  assert.ok(doc.querySelector('.snc-cancel').textContent.includes('取消'));
+  assert.equal(doc.querySelector('.snc-apply'), null, 'no apply button appears while editing');
+  assert.equal(doc.querySelector('.snc-cancel'), null, 'no cancel button appears while editing');
+  /* the gear flips to a check mark, which is what says "press me again to save" */
+  assert.equal(gear(doc).hasAttribute('data-snc-dirty') ? gear(doc).dataset.sncDirty : 'false', 'false');
   dispose();
 });
