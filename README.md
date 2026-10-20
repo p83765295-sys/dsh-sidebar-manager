@@ -11,7 +11,7 @@
 
 | 折叠 | 展开（隐藏 + 排序后） | 编辑 |
 | --- | --- | --- |
-| ![](docs/screenshots/01-folded.png) | ![](docs/screenshots/02-expanded.png) | ![](docs/screenshots/03-editing.png) |
+| ![](https://raw.githubusercontent.com/zuojinxin/dsh-sidebar-manager/main/docs/screenshots/01-folded.png) | ![](https://raw.githubusercontent.com/zuojinxin/dsh-sidebar-manager/main/docs/screenshots/02-expanded.png) | ![](https://raw.githubusercontent.com/zuojinxin/dsh-sidebar-manager/main/docs/screenshots/03-editing.png) |
 
 ## 功能
 
