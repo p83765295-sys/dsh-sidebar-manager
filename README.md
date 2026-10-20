@@ -1,4 +1,4 @@
-# dsh-sidebar-nav-collapse
+# dsh-sidebar-manager
 
 [![DeepSeek Harness](https://img.shields.io/badge/DeepSeek%20Harness-0.2.1--rc.2-2b6cf6)](https://github.com/deepseek-ai)
 [![license](https://img.shields.io/badge/license-MIT-3da639)](./LICENSE)
@@ -43,7 +43,7 @@
 
 ```bash
 # 从本仓库安装（推荐，锁定 tag）
-dsh plugin --profile desktop add 'github:zuojinxin/dsh-sidebar-nav-collapse#v0.7.6'
+dsh plugin --profile desktop add 'github:zuojinxin/dsh-sidebar-manager#v0.7.6'
 ```
 
 安装后需**重启 DSH 桌面版**才会生效。

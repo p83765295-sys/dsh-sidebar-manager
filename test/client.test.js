@@ -41,7 +41,7 @@ const rec = (over = {}) => ({ v: 2, folded: false, hidden: [], views: [], order:
 /* a v1 record, as an older build wrote it */
 const recV1 = (over = {}) => ({ v: 1, folded: false, hidden: [], views: [], ...over });
 const flush = async () => { await Promise.resolve(); await Promise.resolve(); };
-const cssOf = (doc) => doc.querySelector('style[data-plugin-css="dsh-sidebar-nav-collapse"]').textContent;
+const cssOf = (doc) => doc.querySelector('style[data-plugin-css="dsh-sidebar-manager"]').textContent;
 const rows = (doc) => [...doc.querySelectorAll('nav button[class*="panelRow"]')];
 const shadow = (doc) => doc.querySelector('.snc-shell');
 const group = (doc) => doc.querySelector('.snc-group');
@@ -371,7 +371,7 @@ test('host disable restores the DOM completely', async () => {
   assert.equal(doc.querySelector('.snc-shell'), null);
   assert.equal(doc.querySelector('.snc-bud'), null);
   assert.equal(doc.querySelector('.snc-group'), null);
-  assert.equal(doc.querySelector('[data-plugin-css="dsh-sidebar-nav-collapse"]'), null);
+  assert.equal(doc.querySelector('[data-plugin-css="dsh-sidebar-manager"]'), null);
   assert.equal(doc.querySelectorAll('.snc-entry').length, 0);
   assert.equal(doc.querySelectorAll('[data-snc-check]').length, 0);
   // the nav is put back exactly where it was, children untouched
