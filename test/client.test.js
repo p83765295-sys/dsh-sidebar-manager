@@ -297,19 +297,32 @@ test('a folded list still expands into edit mode so the gear stays usable', () =
   dispose();
 });
 
-test('leaving edit mode unfolds so the change is visible', async () => {
+test('entering edit mode unfolds a folded list, and leaving puts the fold back', async () => {
   const { doc, dom, dispose } = start();
   group(doc).click();
   assert.equal(shadow(doc).dataset.sncFolded, 'true');
   gear(doc).click();
+  /* the gear has to reveal the checkboxes it is about to offer */
+  assert.equal(shadow(doc).dataset.sncFolded, 'false', 'edit entry unfolds temporarily');
   assert.equal(doc.querySelectorAll('[data-snc-check]').length, 6);
   gear(doc).click();
-  assert.equal(shadow(doc).dataset.sncFolded, 'false', 'edit exit unfolds the list');
-  assert.equal(group(doc).getAttribute('aria-expanded'), 'true');
-  assert.equal(String(stateOf(dom.window).folded), 'false');
-  // the user can fold again right away
+  /* ...and then hand the fold back: a settings click must not silently cost
+     the user a fold they had set */
+  assert.equal(shadow(doc).dataset.sncFolded, 'true', 'the fold the user had is restored');
+  assert.equal(group(doc).getAttribute('aria-expanded'), 'false');
+  assert.equal(stateOf(dom.window).folded, true, 'and it is the state on disk too');
+  // the user can still unfold on the way as usual
   group(doc).click();
-  assert.equal(shadow(doc).dataset.sncFolded, 'true');
+  assert.equal(shadow(doc).dataset.sncFolded, 'false');
+  dispose();
+});
+
+test('editing an already-open list does not fold it on exit', async () => {
+  const { doc, dispose } = start();
+  assert.equal(shadow(doc).dataset.sncFolded, 'false');
+  gear(doc).click();
+  gear(doc).click();
+  assert.equal(shadow(doc).dataset.sncFolded, 'false', 'nothing to restore, so nothing changes');
   dispose();
 });
 
@@ -452,6 +465,27 @@ test('the active view cannot be hidden', () => {
   assert.deepEqual(stateOf(dom.window).views, [], 'a refused hide leaves the record untouched');
 });
 
+test('a refused hide stops being announced as invalid once the tab is no longer active', async () => {
+  const { doc, dom, dispose } = start(both(['对话', '上下页', '画廊'], 2));
+  gear(doc).click();
+  const boxOf = (label) => [...strip(doc).querySelectorAll('[data-snc-tab-check]')]
+    .find((b) => b.parentElement.textContent.trim() === label);
+
+  const box = boxOf('画廊');
+  box.checked = false;
+  box.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+  assert.equal(box.getAttribute('aria-invalid'), 'true', 'the refusal is announced');
+
+  /* switching away is exactly what the refusal asked the user to do, so the
+     flag must clear -- leaving it set would keep the control announced as
+     broken for the rest of the session */
+  tabByLabel(doc, '对话').setAttribute('aria-selected', 'true');
+  tabByLabel(doc, '画廊').setAttribute('aria-selected', 'false');
+  await flush();
+  assert.equal(boxOf('画廊').hasAttribute('aria-invalid'), false, 'the refusal expires with the state it described');
+  dispose();
+});
+
 test('stored hidden views are applied on boot and the active one is rescued', async () => {
   const dom = new JSDOM(`<!doctype html><html><head></head><body>${both(['对话', '上下页', '画廊'], 1)}</body></html>`, { url: 'http://localhost/' });
   dom.window.localStorage.setItem(STATE_KEY, JSON.stringify(rec({ views: ['画廊', '上下页'] })));
@@ -504,6 +538,8 @@ test('the whole record lives under one versioned key', () => {
   const box = doc.querySelector('[data-snc-check]');
   box.checked = false;
   box.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+  /* the fold gesture is inert while editing, so leave the mode first */
+  gear(doc).click();
   group(doc).click();
   const keys = Object.keys(dom.window.localStorage).filter((k) => k.startsWith('dsh-sidebar-nav-collapse:'));
   assert.deepEqual(keys, [STATE_KEY], 'no per-field keys are written');
@@ -512,6 +548,26 @@ test('the whole record lives under one versioned key', () => {
   assert.equal(record.folded, true);
   assert.deepEqual(record.hidden, ['插件']);
   assert.deepEqual(record.views, []);
+  dispose();
+});
+
+test('the fold gesture is inert while editing, so its target can never vanish', () => {
+  const { doc, dispose } = start();
+  gear(doc).click();
+  assert.equal(shadow(doc).dataset.sncEditing, 'true');
+  /* folding now would hide the list the checkboxes live in, leaving a check
+     mark on screen with nothing to act on */
+  group(doc).click();
+  assert.equal(shadow(doc).dataset.sncFolded, 'false', 'the list stays open');
+  assert.equal(shadow(doc).dataset.sncEditing, 'true', 'and editing continues');
+  assert.equal(group(doc).getAttribute('aria-disabled'), 'true');
+  assert.match(group(doc).getAttribute('aria-label'), /编辑中/);
+
+  /* leaving edit mode hands the fold back */
+  gear(doc).click();
+  assert.equal(group(doc).getAttribute('aria-disabled'), 'false');
+  group(doc).click();
+  assert.equal(shadow(doc).dataset.sncFolded, 'true');
   dispose();
 });
 
