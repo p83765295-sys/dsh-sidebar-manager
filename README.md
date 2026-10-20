@@ -27,7 +27,7 @@ dsh plugin --profile desktop add dsh-sidebar-manager
 从 GitHub 安装：
 
 ```bash
-dsh plugin --profile desktop add 'github:zuojinxin/dsh-sidebar-manager#v0.8.2'
+dsh plugin --profile desktop add 'github:zuojinxin/dsh-sidebar-manager'
 ```
 
 装完重启 DSH 桌面版生效。
