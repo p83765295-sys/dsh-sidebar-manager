@@ -1,6 +1,6 @@
 {
   "name": "dsh-sidebar-nav-collapse",
-  "version": "0.5.2",
+  "version": "0.6.0",
   "license": "MIT",
   "type": "module",
   "description": "DSH sidebar extension manager: a collapsible group row folds the panel list, and its gear manages two groups of show/hide checkboxes — sidebar panels and conversation view tabs (local build)",
