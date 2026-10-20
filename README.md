@@ -2,6 +2,7 @@
 
 让 DSH 的扩展入口和视图标签支持**折叠、排序、隐藏**。
 
+[![npm version](https://img.shields.io/npm/v/dsh-sidebar-manager?style=flat&label=npm)](https://www.npmjs.com/package/dsh-sidebar-manager)
 [![DSH](https://img.shields.io/badge/DSH-up%20to%200.2.1--rc.2-4D6BFE)](https://github.com/deepseek-ai/deepseek-harness)
 [![License](https://img.shields.io/badge/License-MIT-green)](./LICENSE)
 [![GitHub stars](https://img.shields.io/github/stars/zuojinxin/dsh-sidebar-manager?style=flat&label=Stars)](https://github.com/zuojinxin/dsh-sidebar-manager/stargazers)
@@ -21,6 +22,18 @@
 设置自动保存，刷新后仍在。
 
 ## 安装
+
+```bash
+dsh plugin --profile desktop add dsh-sidebar-manager
+```
+
+想装某个固定版本（推荐，避免自动升级带来意外）：
+
+```bash
+dsh plugin --profile desktop add 'dsh-sidebar-manager@0.8.0'
+```
+
+也可以直接从 GitHub 装，能第一时间拿到未发布到 npm 的修复：
 
 ```bash
 dsh plugin --profile desktop add 'github:zuojinxin/dsh-sidebar-manager#v0.8.0'
