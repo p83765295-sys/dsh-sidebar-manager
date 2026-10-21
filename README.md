@@ -7,13 +7,6 @@
 ![折叠、展开、隐藏、拖拽排序的完整交互](https://raw.githubusercontent.com/zuojinxin/dsh-sidebar-manager/main/docs/images/demo.gif)
 
 <details>
-<summary>无解说版（只留侧栏，纯操作）</summary>
-
-![同一段操作，去掉右侧说明文字后的窄版](https://raw.githubusercontent.com/zuojinxin/dsh-sidebar-manager/main/docs/images/demo-compact.gif)
-
-</details>
-
-<details>
 <summary>静态界面预览</summary>
 
 ![折叠后：扩展组收成一行「扩展」，入口全部隐藏，下方直接是工作区](https://raw.githubusercontent.com/zuojinxin/dsh-sidebar-manager/main/docs/screenshots/01-folded.png)
