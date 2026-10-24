@@ -259,19 +259,28 @@ test('the gear is inside the group row, just before the chevron', () => {
 test('settings mode shows a checkbox in front of every extension', () => {
   const { doc, dispose } = start();
   const shell = shadow(doc);
+  const nav = doc.querySelector('nav[class*="panelList"]');
+  const hostRows = [...nav.children];
   assert.equal(doc.querySelectorAll('[data-snc-check]').length, 0);
   gear(doc).click();
   assert.equal(shell.dataset.sncEditing, 'true');
   assert.equal(doc.querySelectorAll('[data-snc-check]').length, 6);
-  // a checkbox inside the host button would bubble into the host selectPanel
+  /* nothing the host owns is re-parented: the nav's children are still exactly
+     the rows the host put there, and our controls live inside them */
+  assert.deepEqual([...nav.children].map((el) => el.tagName + ':' + (el.getAttribute('aria-label') || '')),
+    hostRows.map((el) => el.tagName + ':' + (el.getAttribute('aria-label') || '')),
+    'the host rows are neither moved nor wrapped');
+  assert.ok([...nav.children].every((el, i) => el === hostRows[i]), 'same nodes, same order');
   for (const box of doc.querySelectorAll('[data-snc-check]')) {
-    assert.equal(box.closest('button'), null);
-    assert.ok(box.parentElement.classList.contains('snc-entry'));
-    assert.ok(box.parentElement.querySelector('button[class*="panelRow"]'));
+    const ctl = box.closest('.snc-ctl');
+    assert.ok(ctl, 'the box sits in a control slot');
+    assert.equal(box.parentElement, ctl);
+    assert.equal(ctl.parentElement.parentElement, nav, 'the slot is inside a direct child of the nav');
+    assert.ok(ctl.parentElement.matches('button[class*="panelRow"], [class*="moreAnchor"]'));
     // the drag handle is the outermost slot so it never sits between the box
     // and the row it describes
-    assert.ok(box.parentElement.firstElementChild.hasAttribute('data-snc-drag'), 'handle leads the row');
-    assert.equal(box.parentElement.firstElementChild.nextElementSibling, box, 'checkbox follows the handle');
+    assert.ok(ctl.firstElementChild.hasAttribute('data-snc-drag'), 'handle leads the controls');
+    assert.equal(ctl.firstElementChild.nextElementSibling, box, 'checkbox follows the handle');
   }
   gear(doc).click();
   assert.equal(doc.querySelectorAll('[data-snc-check]').length, 0);
@@ -279,21 +288,34 @@ test('settings mode shows a checkbox in front of every extension', () => {
   dispose();
 });
 
+test('a press on a control never reaches the row that owns it', () => {
+  const { doc, dom, dispose } = start();
+  gear(doc).click();
+  const row = rows(doc).find((r) => r.getAttribute('aria-label') === '任务看板');
+  let reached = 0;
+  row.addEventListener('click', () => { reached += 1; });
+  const box = row.querySelector(':scope > .snc-ctl > [data-snc-check]');
+  box.click();
+  assert.equal(reached, 0, 'the host row must not see the click, or it would select the panel');
+  assert.equal(box.checked, false, 'the box still toggled');
+  dispose();
+});
+
 test('unchecking hides an extension and persists it', async () => {
   const { doc, dom, dispose } = start();
   gear(doc).click();
   const entry = rows(doc).find((r) => r.getAttribute('aria-label') === '任务看板');
-  const box = entry.parentElement.querySelector('[data-snc-check]');
+  const box = entry.querySelector(':scope > .snc-ctl > [data-snc-check]');
   box.checked = false;
   box.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
   await flush();
-  // the flag lives on the movable unit, which is the wrapper while editing
-  assert.equal(entry.parentElement.dataset.sncHidden, 'true');
+  // the flag lives on the row itself
+  assert.equal(entry.dataset.sncHidden, 'true');
   assert.deepEqual(stateOf(dom.window).hidden, ['任务看板']);
 
   gear(doc).click();
   const after = rows(doc).find((r) => r.getAttribute('aria-label') === '任务看板');
-  // unwrapped again: the row itself is the unit, and it carries the flag along
+  // the row is the unit, in edit mode and out of it
   assert.equal(after.parentElement.tagName, 'NAV');
   assert.equal(after.dataset.sncHidden, 'true');
   assert.match(cssOf(doc), /\[data-snc-hidden="true"\]\s*\{\s*display:\s*none/);
@@ -311,7 +333,7 @@ test('hidden extensions stay reachable while editing so they can be restored', (
   assert.match(css.slice(ruleStart), /display:\s*flex\s*!important/);
   gear(doc).click();
   assert.equal(shell.dataset.sncEditing, 'true');
-  assert.equal(row.parentElement.querySelector('[data-snc-check]').checked, false);
+  assert.equal(row.querySelector(':scope > .snc-ctl > [data-snc-check]').checked, false);
   dispose();
 });
 
@@ -329,12 +351,13 @@ test('a row the host wraps in an anchor is still an entry', () => {
   gear(doc).click();
   const anchor = doc.querySelector('[class*="moreAnchor"]');
   assert.ok(anchor, 'the host anchor survives');
-  const entry = anchor.parentElement;
-  assert.ok(entry.classList.contains('snc-entry'), 'the anchor is the unit, not its button');
-  const box = entry.querySelector(':scope > [data-snc-check]');
-  assert.ok(box, 'the more entry gets a checkbox like every other row');
+  assert.equal(anchor.parentElement.tagName, 'NAV', 'and stays exactly where the host put it');
+  const ctl = anchor.querySelector(':scope > .snc-ctl');
+  assert.ok(ctl, 'the more entry gets controls like every other row');
+  const box = ctl.querySelector('[data-snc-check]');
+  assert.ok(box, 'a checkbox');
   assert.equal(box.checked, true);
-  assert.ok(entry.firstElementChild.hasAttribute('data-snc-drag'), 'and a drag handle');
+  assert.ok(ctl.querySelector('[data-snc-drag]'), 'and a drag handle');
   // the popup is placed from the anchor box, so the button must stay inside it
   assert.ok(anchor.querySelector('button[class*="panelRow"]'), 'the button is not pulled out of its anchor');
   dispose();
@@ -343,14 +366,14 @@ test('a row the host wraps in an anchor is still an entry', () => {
 test('hiding the more entry takes its anchor with it, and gives it back', async () => {
   const { doc, dom, dispose } = start(navigationWithMore());
   gear(doc).click();
-  const box = doc.querySelector('[class*="moreAnchor"]').parentElement.querySelector('[data-snc-check]');
+  const box = doc.querySelector('[class*="moreAnchor"] > .snc-ctl > [data-snc-check]');
   box.checked = false;
   box.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
   await flush();
   assert.deepEqual(stateOf(dom.window).hidden, ['更多']);
   gear(doc).click();
   const unit = doc.querySelector('[class*="moreAnchor"]');
-  assert.equal(unit.parentElement.tagName, 'NAV', 'the anchor is handed back, not just its button');
+  assert.equal(unit.parentElement.tagName, 'NAV', 'the anchor is the unit, not its button');
   assert.equal(unit.dataset.sncHidden, 'true', 'the flag sits on what is actually hidden');
   const css = cssOf(doc);
   const ruleStart = css.indexOf('nav[class*="panelList"] > button[class*="panelRow"][data-snc-hidden="true"]');
@@ -359,15 +382,16 @@ test('hiding the more entry takes its anchor with it, and gives it back', async 
   dispose();
 });
 
-test('a row that leaves the list while editing takes its wrapper with it', async () => {
+test('a row the host removes mid-edit leaves nothing behind', async () => {
   /* the host's own "more" menu unpins a panel, which removes its button from
-     the list while our wrapper is still around it */
+     the list while our controls sit inside it */
   const { doc, dispose } = start(navigationWithMore());
   gear(doc).click();
   rows(doc).find((r) => r.getAttribute('aria-label') === '任务看板').remove();
   await flush();
-  assert.equal(doc.querySelectorAll('.snc-entry').length, 3, 'no wrapper outlives its row');
-  assert.equal(doc.querySelectorAll('[data-snc-check]').length, 3, 'and no bare checkbox either');
+  assert.equal(doc.querySelectorAll('.snc-ctl').length, 3, 'only the remaining rows keep controls');
+  assert.equal(doc.querySelectorAll('[data-snc-check]').length, 3, 'and no control outlives its row');
+  assert.equal(doc.querySelectorAll('nav > *').length, 3, 'nothing is left in the list');
   dispose();
 });
 
@@ -441,13 +465,13 @@ test('survives a sidebar remount and ignores unknown entries', async () => {
 test('host disable restores the DOM completely', async () => {
   const { doc, dispose } = start();
   gear(doc).click();
-  assert.equal(doc.querySelectorAll('.snc-entry').length, 6);
+  assert.equal(doc.querySelectorAll('.snc-ctl').length, 6);
   dispose();
   assert.equal(doc.querySelector('.snc-shell'), null);
   assert.equal(doc.querySelector('.snc-bud'), null);
   assert.equal(doc.querySelector('.snc-group'), null);
   assert.equal(doc.querySelector('[data-plugin-css="dsh-sidebar-manager"]'), null);
-  assert.equal(doc.querySelectorAll('.snc-entry').length, 0);
+  assert.equal(doc.querySelectorAll('.snc-ctl').length, 0);
   assert.equal(doc.querySelectorAll('[data-snc-check]').length, 0);
   // the nav is put back exactly where it was, children untouched
   const nav = doc.querySelector('nav');
@@ -475,33 +499,41 @@ const both = (labels, activeIndex) => navigation() + tabs(labels, activeIndex);
 const strip = (doc) => doc.querySelector('div[data-conversation-tabs]');
 const tabEls = (doc) => [...strip(doc).querySelectorAll('button[role="tab"]')];
 const tabByLabel = (doc, label) => tabEls(doc).find((t) => t.textContent === label);
+/* the host renders the row's "..." launcher as a SIBLING of the tablist */
+const moreButton = (label = '更多会话视图') =>
+  `<span class="_Dc7zOa_viewsMoreAnchor"><button type="button" class="_Dc7zOa_viewsMore" aria-label="${label}" aria-haspopup="menu" aria-expanded="false"></button></span>`;
+const moreButtonOf = (doc) => doc.querySelector('[class*="viewsMoreAnchor"] button');
+const moreAnchorOf = (doc) => doc.querySelector('[class*="viewsMoreAnchor"]');
 
 test('view tabs are untouched until edit mode, then each gets its own checkbox', () => {
   const { doc, dispose } = start(both());
+  const hostTabs = tabEls(doc);
   assert.equal(strip(doc).querySelectorAll('[data-snc-tab-check]').length, 0, 'no boxes at rest');
-  assert.equal(strip(doc).querySelectorAll('.snc-tabitem').length, 0, 'no wrappers at rest');
+  assert.equal(strip(doc).querySelectorAll('.snc-ctl').length, 0, 'no controls at rest');
   assert.equal(tabEls(doc).length, 5);
 
   gear(doc).click();
   assert.equal(strip(doc).dataset.sncEditing, 'true');
   assert.equal(strip(doc).querySelectorAll('[data-snc-tab-check]').length, 4, 'chat has no box');
-  // the checkbox is a SIBLING, never a child: a nested input eats the click
+  /* the tab itself is the unit, and it keeps the slot the host gave it */
+  assert.equal(strip(doc).children.length, 5, 'the host tabs are neither moved nor wrapped');
+  assert.ok(hostTabs.every((tab) => tab.parentElement === strip(doc)), 'each tab is still a child of the strip');
   for (const box of strip(doc).querySelectorAll('[data-snc-tab-check]')) {
-    assert.equal(box.querySelector('button'), null);
-    assert.equal(box.closest('button'), null, 'input must not live inside a tab button');
+    assert.equal(box.closest('.snc-ctl').parentElement, box.closest('button[role="tab"]'),
+      'the controls live inside the tab, so a press has to be stopped (onControlClick)');
   }
   assert.match(cssOf(doc), /data-conversation-tabs\]\[data-snc-editing="true"\]\s*\{\s*flex-wrap:\s*wrap/);
 
   gear(doc).click();
   assert.equal(strip(doc).dataset.sncEditing, 'false');
-  assert.equal(strip(doc).querySelectorAll('.snc-tabitem').length, 0, 'unwrapped on exit');
+  assert.equal(strip(doc).querySelectorAll('.snc-ctl').length, 0, 'controls removed on exit');
 });
 
 test('unchecking a view tab hides it and is remembered', () => {
   const { doc, dom, dispose } = start(both());
   gear(doc).click();
   const box = strip(doc).querySelectorAll('[data-snc-tab-check]')[0];
-  assert.equal(box.parentElement.textContent.trim(), '上下页', 'box order skips chat');
+  assert.equal(box.closest('.snc-ctl').parentElement.textContent.trim(), '上下页', 'box order skips chat');
   box.checked = false;
   box.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
   assert.equal(tabByLabel(doc, '上下页').dataset.sncHidden, 'true');
@@ -517,12 +549,52 @@ test('the chat view has no checkbox and can never be hidden', () => {
   const { doc, dom, dispose } = start(both());
   gear(doc).click();
   const chat = tabByLabel(doc, '对话');
-  assert.equal(chat.parentElement.querySelector('[data-snc-tab-check]'), null, 'no box in front of chat');
-  // it still gets the uniform wrapper so the row stays aligned
-  assert.ok(chat.parentElement.classList.contains('snc-tabitem'));
+  assert.equal(chat.querySelector('[data-snc-tab-check]'), null, 'no box in front of chat');
+  // it still gets the grip, so the row stays aligned and it can be moved
+  assert.ok(chat.querySelector(':scope > .snc-ctl > [data-snc-drag]'), 'a grip, but no box');
   // a stale store entry from an older build is reconciled away on paint
   assert.equal(chat.hasAttribute('data-snc-hidden'), false);
   assert.deepEqual(stateOf(dom.window).views, [], 'chat never lands in the record');
+  dispose();
+});
+
+test('the row\'s "..." launcher gets a box of its own, but no drag handle', () => {
+  const { doc, dom, dispose } = start(both(['对话', '上下页', '画廊'], 0) + moreButton());
+  assert.equal(strip(doc).querySelector('[class*="viewsMore"]'), null, 'the host puts it outside the strip');
+  assert.equal(moreAnchorOf(doc).querySelector('.snc-ctl'), null, 'no controls at rest');
+
+  gear(doc).click();
+  const anchor = moreAnchorOf(doc);
+  assert.equal(anchor.parentElement.tagName, 'BODY', 'it stays exactly where the host put it');
+  assert.ok(anchor.querySelector(':scope > .snc-ctl > [data-snc-more-check]'), 'checkbox inside the anchor');
+  assert.equal(anchor.querySelector('.snc-drag'), null, 'no handle: the strip owns the tab order');
+
+  const box = anchor.querySelector('[data-snc-more-check]');
+  box.checked = false;
+  box.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+  assert.equal(anchor.dataset.sncHidden, 'true', 'the flag sits on the row, not on the inner button');
+  assert.deepEqual(stateOf(dom.window).views, ['更多会话视图'], 'stored under the stable key');
+
+  gear(doc).click();
+  assert.equal(anchor.querySelector('.snc-ctl'), null, 'controls removed on exit');
+  assert.equal(moreAnchorOf(doc).dataset.sncHidden, 'true', 'stays hidden after exit');
+  assert.match(cssOf(doc), /~ \[class\*="viewsMoreAnchor"\]\[data-snc-hidden="true"\]/);
+});
+
+test('a launcher whose label follows the active view is still one entry', () => {
+  const { doc, dom, dispose } = start(both(['对话', '画廊'], 0) + moreButton('更多会话视图 · 画廊'));
+  gear(doc).click();
+  const box = doc.querySelector('[data-snc-more-check]');
+  box.checked = false;
+  box.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+  assert.deepEqual(stateOf(dom.window).views, ['更多会话视图'], 'the suffix never becomes part of the key');
+});
+
+test('a launcher hidden in an earlier session comes back hidden', () => {
+  const { doc, dispose } = start(both(['对话', '画廊'], 0) + moreButton(), rec({ views: ['更多会话视图'] }));
+  assert.equal(moreAnchorOf(doc).dataset.sncHidden, 'true', 'no edit mode needed to apply it');
+  gear(doc).click();
+  assert.equal(doc.querySelector('[data-snc-more-check]').checked, false, 'the box agrees with the store');
   dispose();
 });
 
@@ -547,7 +619,7 @@ test('a stored hidden chat entry is dropped on boot', async () => {
 test('the active view cannot be hidden', () => {
   const { doc, dom, dispose } = start(both(['对话', '上下页', '画廊'], 2));
   gear(doc).click();
-  const box = [...strip(doc).querySelectorAll('[data-snc-tab-check]')].find((b) => b.parentElement.textContent.trim() === '画廊');
+  const box = [...strip(doc).querySelectorAll('[data-snc-tab-check]')].find((b) => b.closest('.snc-ctl').parentElement.textContent.trim() === '画廊');
   assert.ok(box, 'the active non-chat view still has a box');
   assert.equal(box.checked, true);
   box.checked = false;
@@ -562,7 +634,7 @@ test('a refused hide stops being announced as invalid once the tab is no longer 
   const { doc, dom, dispose } = start(both(['对话', '上下页', '画廊'], 2));
   gear(doc).click();
   const boxOf = (label) => [...strip(doc).querySelectorAll('[data-snc-tab-check]')]
-    .find((b) => b.parentElement.textContent.trim() === label);
+    .find((b) => b.closest('.snc-ctl').parentElement.textContent.trim() === label);
 
   const box = boxOf('画廊');
   box.checked = false;
@@ -606,7 +678,7 @@ test('tabs that mount after the plugin are picked up', async () => {
   assert.equal(strip(doc).dataset.sncEditing, 'true');
   assert.equal(strip(doc).querySelectorAll('[data-snc-tab-check]').length, 4, 'late strip is managed');
   dispose();
-  assert.equal(doc.querySelectorAll('.snc-tabitem').length, 0);
+  assert.equal(doc.querySelectorAll('.snc-ctl').length, 0);
   assert.equal(doc.querySelectorAll('[data-snc-tab-check]').length, 0);
   assert.equal(strip(doc).hasAttribute('data-snc-editing'), false);
 });
@@ -720,17 +792,17 @@ test('hidden tabs carry no extra decoration, only the fade the sidebar uses', ()
   const { doc, dispose } = start(both());
   const css = cssOf(doc);
   assert.doesNotMatch(css, /line-through/, 'no strikethrough on hidden tabs');
-  const ruleStart = css.indexOf('> .snc-tabitem > button[role="tab"][data-snc-hidden="true"]');
+  const ruleStart = css.indexOf('> button[role="tab"][data-snc-hidden="true"]');
   assert.ok(ruleStart >= 0, 'hidden-tab rule exists');
   const rule = css.slice(ruleStart, css.indexOf('}', ruleStart));
   assert.match(rule, /opacity:\s*\.45/);
   // the sidebar row rule is the reference the tab must match
-  const rowStart = css.indexOf('> .snc-entry > [data-snc-hidden="true"]');
+  const rowStart = css.indexOf('nav[class*="panelList"] > [data-snc-hidden="true"]');
   assert.ok(rowStart >= 0, 'hidden-row rule exists');
   assert.match(css.slice(rowStart, css.indexOf('}', rowStart)), /opacity:\s*\.45/);
   gear(doc).click();
   const tab = [...doc.querySelectorAll('[role="tab"]')].find((t) => t.textContent.trim() === '记忆系统');
-  const box = tab.parentElement.querySelector('[data-snc-tab-check]');
+  const box = tab.querySelector(':scope > .snc-ctl > [data-snc-tab-check]');
   box.checked = false;
   box.dispatchEvent(new doc.defaultView.Event('change', { bubbles: true }));
   assert.equal(tab.dataset.sncHidden, 'true');
@@ -745,7 +817,7 @@ test('a row without an aria-label falls back to its own text and skips the glyph
   const { doc, dom, dispose } = start(`<nav class="_2H3hWW_panelList" aria-label="全局面板">${plain}</nav>`);
   gear(doc).click();
   const row = doc.querySelector('button[class*="panelRow"]');
-  const box = row.parentElement.querySelector('[data-snc-check]');
+  const box = row.querySelector(':scope > .snc-ctl > [data-snc-check]');
   box.checked = false;
   box.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
   const stored = stateOf(dom.window).hidden;
@@ -768,7 +840,7 @@ test('the group row and the gear cannot be selected as text', () => {
 
 /* ---------------------------- reorder (drag and drop) ---------------------------- */
 const orderOf = (doc) => rows(doc).map((r) => (r.getAttribute('aria-label') || '').trim());
-const dragHandles = (doc) => [...doc.querySelectorAll('.snc-entry > [data-snc-drag]')];
+const dragHandles = (doc) => [...doc.querySelectorAll('nav[class*="panelList"] .snc-ctl > [data-snc-drag]')];
 /* jsdom has no layout: getBoundingClientRect is all-zero, so the midpoint test
    would never fire. This stubs a synthetic column (or row) whose positions are
    derived from the element's CURRENT index among its siblings, which is what a
@@ -815,20 +887,24 @@ const pointer = (win, type, target, x, y) => {
   return ev;
 };
 const dropMarks = (doc) => [...doc.querySelectorAll('[data-snc-drop]')].map((el) => {
-  const label = el.querySelector('button')?.getAttribute('aria-label') || el.textContent.trim();
+  const label = el.getAttribute('aria-label') || el.querySelector('button')?.getAttribute('aria-label') || el.textContent.trim();
   return label + ':' + el.dataset.sncDrop;
 });
 
 test('no drag handle exists outside edit mode', () => {
   const { doc, dispose } = start(both());
+  /* the handles are created with the controls and removed with them, so there
+     is nothing to hide: outside edit mode the document holds none at all */
   assert.equal(doc.querySelectorAll('[data-snc-drag]').length, 0);
   gear(doc).click();
   assert.equal(dragHandles(doc).length, 6, 'one handle per sidebar entry');
-  assert.equal(strip(doc).querySelectorAll('.snc-tabitem > [data-snc-drag]').length, 5, 'one per view tab');
+  assert.equal(strip(doc).querySelectorAll('button[role="tab"] > .snc-ctl > [data-snc-drag]').length, 5, 'one per view tab');
   const css = cssOf(doc);
   const rule = css.slice(css.indexOf('.snc-drag {'), css.indexOf('}', css.indexOf('.snc-drag {')));
-  assert.match(rule, /display:\s*none/, 'handles are hidden at rest');
   assert.match(rule, /touch-action:\s*none/, 'a touch drag must not scroll the page instead');
+  assert.match(rule, /cursor:\s*grab/);
+  gear(doc).click();
+  assert.equal(doc.querySelectorAll('[data-snc-drag]').length, 0, 'and they leave with the mode');
   dispose();
 });
 
@@ -836,7 +912,7 @@ test('dragging a sidebar row past a neighbour reorders it in the DOM', () => {
   const { doc, dom, dispose } = start(both());
   gear(doc).click();
   const handles = dragHandles(doc);
-  const entries = stubUnits(dom.window, [...doc.querySelectorAll("nav > .snc-entry")]);
+  const entries = stubUnits(dom.window, [...doc.querySelectorAll('nav > button[class*="panelRow"]')]);
   stubHit(dom.window, entries);
   assert.deepEqual(orderOf(doc), ['插件', '自动化任务', '上下文洞察', '扩展管理', '任务看板', '记忆系统']);
 
@@ -875,17 +951,17 @@ test('a drop suspends the CSS transitions that would otherwise delay the settle'
     return { addEventListener() {}, cancel() {} };
   };
   gear(doc).click();
-  const entries = stubUnits(dom.window, [...doc.querySelectorAll("nav > .snc-entry")]);
+  const entries = stubUnits(dom.window, [...doc.querySelectorAll('nav > button[class*="panelRow"]')]);
   stubHit(dom.window, entries);
   /* the FLIP is what animates the swap; a CSS `transition: transform` on the
      same unit would run on top of it and stretch the movement out, and the
      carried row's opacity transition would read as the row hesitating. Both
      have to be off for the frames the change lands in. */
   const css = doc.querySelector('style[data-plugin-css]').textContent;
-  assert.match(css, /\.snc-entry\[data-snc-flipping="true"\][\s\S]*?transition:\s*none !important/);
+  assert.match(css, /\[data-snc-flipping="true"\][\s\S]*?transition:\s*none !important/);
   assert.match(css, /\[data-snc-no-fade="true"\][\s\S]*?transition:\s*none !important/);
 
-  const carried = doc.querySelectorAll('nav > .snc-entry')[0];
+  const carried = doc.querySelector('nav > button[class*="panelRow"]');
   pointer(dom.window, 'pointerdown', dragHandles(doc)[0], 10, 14);
   pointer(dom.window, 'pointermove', dom.window.document.body, 10, 70);
   pointer(dom.window, 'pointerup', dom.window.document.body, 10, 70);
@@ -909,7 +985,7 @@ test('a drop still reorders and saves on a host with no matchMedia and no animat
   assert.equal(typeof dom.window.matchMedia, 'undefined', 'this host really lacks matchMedia');
   assert.equal(typeof dom.window.Element.prototype.animate, 'undefined', 'and Web Animations');
   gear(doc).click();
-  const entries = stubUnits(dom.window, [...doc.querySelectorAll("nav > .snc-entry")]);
+  const entries = stubUnits(dom.window, [...doc.querySelectorAll('nav > button[class*="panelRow"]')]);
   stubHit(dom.window, entries);
 
   const errors = [];
@@ -932,7 +1008,7 @@ test('a drag does not select the panel it was started on', () => {
   const first = rows(doc)[0];
   let selected = 0;
   first.addEventListener('click', () => { selected += 1; });
-  stubUnits(dom.window, [...doc.querySelectorAll("nav > .snc-entry")]);
+  stubUnits(dom.window, [...doc.querySelectorAll('nav > button[class*="panelRow"]')]);
   pointer(dom.window, 'pointerdown', dragHandles(doc)[0], 10, 14);
   assert.equal(selected, 0, 'pointerdown is swallowed before it becomes a click');
   dispose();
@@ -941,7 +1017,7 @@ test('a drag does not select the panel it was started on', () => {
 test('a drag is saved the moment it lands, without leaving edit mode', () => {
   const { doc, dom, dispose } = start(both());
   gear(doc).click();
-  const unitsA = stubUnits(dom.window, [...doc.querySelectorAll("nav > .snc-entry")]);
+  const unitsA = stubUnits(dom.window, [...doc.querySelectorAll('nav > button[class*="panelRow"]')]);
   stubHit(dom.window, unitsA);
   pointer(dom.window, 'pointerdown', dragHandles(doc)[0], 10, 14);
   /* rows are 40px tall at y = index*40. One move only ever shifts the row by
@@ -974,7 +1050,7 @@ test('Escape leaves edit mode but cannot undo, because every change is already s
   assert.deepEqual(orderOf(doc).slice(0, 2), ['记忆系统', '插件']);
 
   gear(doc).click();
-  const unitsB = stubUnits(dom.window, [...doc.querySelectorAll("nav > .snc-entry")]);
+  const unitsB = stubUnits(dom.window, [...doc.querySelectorAll('nav > button[class*="panelRow"]')]);
   stubHit(dom.window, unitsB);
   pointer(dom.window, 'pointerdown', dragHandles(doc)[0], 10, 14);
   /* "记忆系统" sits at index 0; row 5 spans 200..236 (midpoint 218), so y=230 is
@@ -1005,7 +1081,7 @@ test('a plugin installed after the layout was saved lands at the end', () => {
 test('view tabs reorder on the horizontal axis and persist', () => {
   const { doc, dom, dispose } = start(both());
   gear(doc).click();
-  const items = [...strip(doc).querySelectorAll(':scope > .snc-tabitem')];
+  const items = [...strip(doc).querySelectorAll(':scope > button[role="tab"]')];
   /* tabs are a ROW: left/right is the axis, and each item is 90px wide in the
      synthetic layout, so indices sit at x = 0/90/180/... */
   /* tabs are a ROW: left/right is the axis. Each tab is 90px wide in this
@@ -1076,7 +1152,7 @@ test('editing has no pending state, so the gear never carries a dot', () => {
   box.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
   assert.equal(gear(doc).hasAttribute('data-snc-dirty'), false);
 
-  const units = stubUnits(dom.window, [...doc.querySelectorAll("nav > .snc-entry")]);
+  const units = stubUnits(dom.window, [...doc.querySelectorAll('nav > button[class*="panelRow"]')]);
   stubHit(dom.window, units);
   pointer(dom.window, 'pointerdown', dragHandles(doc)[0], 10, 14);
   pointer(dom.window, 'pointermove', dom.window.document.body, 10, 70);
