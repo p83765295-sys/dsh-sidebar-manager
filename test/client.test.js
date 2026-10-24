@@ -12,6 +12,14 @@ const path = fileURLToPath(new URL('../lib/client.js', import.meta.url));
 const panel = (name) => `<button class="_2H3hWW_panelRow" aria-label="${name}"><span class="_2H3hWW_panelGlyph">★</span><span class="_2H3hWW_panelTitle">${name}</span></button>`;
 const navigation = (names = ['插件', '自动化任务', '上下文洞察', '扩展管理', '任务看板', '记忆系统']) =>
   `<nav class="_2H3hWW_panelList" aria-label="全局面板">${names.map(panel).join('')}</nav><div id="workspaces">Workspace and sessions</div>`;
+/* DSH renders its own trailing "more" entry inside an anchor element: the popup
+   it opens is positioned from that box, so the row is NOT a bare button child
+   of the nav. Everything that walks the list has to cope with that shape. */
+const more = (label = '更多') =>
+  `<span class="_2H3hWW_moreAnchor"><button class="_2H3hWW_panelRow" aria-label="${label}" aria-haspopup="menu" aria-expanded="false">` +
+  `<span class="_2H3hWW_panelGlyph">▦</span><span class="_2H3hWW_panelTitle">${label}</span></button></span>`;
+const navigationWithMore = (names = ['插件', '自动化任务', '任务看板']) =>
+  `<nav class="_2H3hWW_panelList" aria-label="全局面板">${names.map(panel).join('')}${more()}</nav><div id="workspaces">Workspace and sessions</div>`;
 
 const STATE_KEY = 'dsh-sidebar-nav-collapse:state';
 /* the fused record: one key, one version */
@@ -279,11 +287,14 @@ test('unchecking hides an extension and persists it', async () => {
   box.checked = false;
   box.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
   await flush();
-  assert.equal(entry.dataset.sncHidden, 'true');
+  // the flag lives on the movable unit, which is the wrapper while editing
+  assert.equal(entry.parentElement.dataset.sncHidden, 'true');
   assert.deepEqual(stateOf(dom.window).hidden, ['任务看板']);
 
   gear(doc).click();
   const after = rows(doc).find((r) => r.getAttribute('aria-label') === '任务看板');
+  // unwrapped again: the row itself is the unit, and it carries the flag along
+  assert.equal(after.parentElement.tagName, 'NAV');
   assert.equal(after.dataset.sncHidden, 'true');
   assert.match(cssOf(doc), /\[data-snc-hidden="true"\]\s*\{\s*display:\s*none/);
   dispose();
@@ -301,6 +312,70 @@ test('hidden extensions stay reachable while editing so they can be restored', (
   gear(doc).click();
   assert.equal(shell.dataset.sncEditing, 'true');
   assert.equal(row.parentElement.querySelector('[data-snc-check]').checked, false);
+  dispose();
+});
+
+/* ---------------------- the host's own trailing "more" entry ----------------------
+   DSH 0.2.1-rc.3 appends a "more" entry to the panel list. It is the one row the
+   host does not render as a bare button, so a walk that only looked at
+   `nav > button.panelRow` never saw it: no checkbox, no handle, and the order
+   replay (which appends every unit it knows) lifted it above the list. */
+const navOrder = (doc) => [...doc.querySelector('nav[class*="panelList"]').children]
+  .map((el) => ((el.getAttribute('aria-label') || '') ||
+    (el.querySelector('button[class*="panelRow"]')?.getAttribute('aria-label') || '')).trim());
+
+test('a row the host wraps in an anchor is still an entry', () => {
+  const { doc, dispose } = start(navigationWithMore());
+  gear(doc).click();
+  const anchor = doc.querySelector('[class*="moreAnchor"]');
+  assert.ok(anchor, 'the host anchor survives');
+  const entry = anchor.parentElement;
+  assert.ok(entry.classList.contains('snc-entry'), 'the anchor is the unit, not its button');
+  const box = entry.querySelector(':scope > [data-snc-check]');
+  assert.ok(box, 'the more entry gets a checkbox like every other row');
+  assert.equal(box.checked, true);
+  assert.ok(entry.firstElementChild.hasAttribute('data-snc-drag'), 'and a drag handle');
+  // the popup is placed from the anchor box, so the button must stay inside it
+  assert.ok(anchor.querySelector('button[class*="panelRow"]'), 'the button is not pulled out of its anchor');
+  dispose();
+});
+
+test('hiding the more entry takes its anchor with it, and gives it back', async () => {
+  const { doc, dom, dispose } = start(navigationWithMore());
+  gear(doc).click();
+  const box = doc.querySelector('[class*="moreAnchor"]').parentElement.querySelector('[data-snc-check]');
+  box.checked = false;
+  box.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+  await flush();
+  assert.deepEqual(stateOf(dom.window).hidden, ['更多']);
+  gear(doc).click();
+  const unit = doc.querySelector('[class*="moreAnchor"]');
+  assert.equal(unit.parentElement.tagName, 'NAV', 'the anchor is handed back, not just its button');
+  assert.equal(unit.dataset.sncHidden, 'true', 'the flag sits on what is actually hidden');
+  const css = cssOf(doc);
+  const ruleStart = css.indexOf('nav[class*="panelList"] > button[class*="panelRow"][data-snc-hidden="true"]');
+  assert.match(css.slice(ruleStart, css.indexOf('}', ruleStart)),
+    /:has\(> button\[class\*="panelRow"\]\)\[data-snc-hidden="true"\]/, 'a wrapper that owns a row is hidden too');
+  dispose();
+});
+
+test('a row that leaves the list while editing takes its wrapper with it', async () => {
+  /* the host's own "more" menu unpins a panel, which removes its button from
+     the list while our wrapper is still around it */
+  const { doc, dispose } = start(navigationWithMore());
+  gear(doc).click();
+  rows(doc).find((r) => r.getAttribute('aria-label') === '任务看板').remove();
+  await flush();
+  assert.equal(doc.querySelectorAll('.snc-entry').length, 3, 'no wrapper outlives its row');
+  assert.equal(doc.querySelectorAll('[data-snc-check]').length, 3, 'and no bare checkbox either');
+  dispose();
+});
+
+test('replaying a saved order leaves the more entry in its host slot', () => {
+  const { doc, dispose } = start(navigationWithMore(), rec({ order: ['任务看板', '插件', '自动化任务'] }));
+  // the stored order applies to the rows; the more entry is unknown to it, so it
+  // keeps the slot the host gave it (last) instead of jumping above the list
+  assert.deepEqual(navOrder(doc), ['任务看板', '插件', '自动化任务', '更多']);
   dispose();
 });
 
@@ -650,7 +725,7 @@ test('hidden tabs carry no extra decoration, only the fade the sidebar uses', ()
   const rule = css.slice(ruleStart, css.indexOf('}', ruleStart));
   assert.match(rule, /opacity:\s*\.45/);
   // the sidebar row rule is the reference the tab must match
-  const rowStart = css.indexOf('> .snc-entry:has(> button[data-snc-hidden="true"]) > button[class*="panelRow"]');
+  const rowStart = css.indexOf('> .snc-entry > [data-snc-hidden="true"]');
   assert.ok(rowStart >= 0, 'hidden-row rule exists');
   assert.match(css.slice(rowStart, css.indexOf('}', rowStart)), /opacity:\s*\.45/);
   gear(doc).click();
